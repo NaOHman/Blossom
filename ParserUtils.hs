@@ -4,6 +4,7 @@ module ParserUtils where
 
 import Control.Monad (void)
 import Text.Megaparsec
+import Text.Megaparsec.Prim
 import Text.Megaparsec.String
 import qualified Text.Megaparsec.Lexer as L
 
@@ -15,22 +16,49 @@ commentEnd = "*/"
 
 inlineComment = "//"
 
+line p = p <* anySpace <* eol'
+
 myReserves = ["if", "then", "else", "is", "while", "curry", "send", "send_wait", "MailBox", "fun", "when", "where", "because", "given", "and", "or", "not"]
 
-myOps = ["<",">","<=",">=","+","-","/","//","%", "=", "==", "and", "or", "not"]
+opChars = "<>=+-/%@~*!?:.,"
 
-myEOL = try (string "\n\r") <|> try (string "\r\n") 
+eol' = try (string "\n\r") <|> try (string "\r\n") 
         <|> string "\n" <|> string "\r"
 
 inlineSpace = try continuation <|> some (oneOf noBreakSpace)
 
-lexeme = L.lexeme spaceConsumer
+maybeISpace = many inlineSpace
 
-symbol = L.symbol spaceConsumer
+comma' = char ',' >> anySpace
 
-comma = symbol ","
+miString = miLexeme . string
+miChar  = miLexeme . char
+miName = miLexeme name
+miLName = miLexeme lowerName
+miUName = miLexeme upperName
 
-parens = between (symbol "(") (symbol ")")
+miLexeme :: MonadParsec s m Char => m a -> m a
+miLexeme p = p <* maybeISpace
+
+iString = iLexeme . string
+iChar  = iLexeme . char
+iLName = iLexeme lowerName
+iUName = iLexeme upperName
+
+iLexeme :: MonadParsec s m Char => m a -> m a
+iLexeme p = p <* inlineSpace
+
+colon' = miChar ':'
+
+anySpace = void . many $
+             void inlineSpace 
+         <|> lineCmnt'
+         <|> blockCmnt
+         <|> void eol'
+
+parens = between (miChar '(') (miChar ')')
+
+aBrackets = between (miChar '<') (miChar '>')
 
 lowerName = identifier lowerChar
 
@@ -42,7 +70,7 @@ upperName = identifier upperChar
 
 rword w = string w *> notFollowedBy alphaNumChar *> spaceConsumer
 
-identifier firstCharParser = lexeme (p >>= rwcheck)
+identifier firstCharParser = p >>= rwcheck
     where p         = (:) <$> firstCharParser <*> many nameChars
           rwcheck x = if x `elem` myReserves
                       then fail $ "You can't use " ++ show x ++ " It's all mine"
@@ -54,9 +82,30 @@ continuation = do
     many $ oneOf noBreakSpace
     char '\\' 
     many $ oneOf noBreakSpace
-    myEOL 
+    eol' 
     many $ oneOf noBreakSpace
 
 spaceConsumer = L.space (void inlineSpace) lineCmnt blockCmnt
-    where lineCmnt  = L.skipLineComment inlineComment
-          blockCmnt = L.skipBlockComment commentStart commentEnd
+
+lineCmnt  = L.skipLineComment inlineComment
+lineCmnt' = L.skipLineComment inlineComment >> void eol'
+blockCmnt = L.skipBlockComment commentStart commentEnd
+
+whiteLine = many inlineSpace *> eol'
+indentGuard n = count n wsChar >> notFollowedBy wsChar
+wsChar = oneOf noBreakSpace
+
+indentBlock n p = do
+    lvl <- nextIndentLevel
+    if lvl <= n
+    then fail "Expecting indented block, didn't find one"
+    else (do  
+        head <- p <* eol'
+        tail <- sepBy (indentGuard lvl *> p) eol'
+        return $ head:tail)
+     
+nextIndentLevel = do
+    many $ try whiteLine
+    firstWs <- many wsChar
+    return $ length firstWs
+    where notWs = notFollowedBy $ noneOf noBreakSpace
