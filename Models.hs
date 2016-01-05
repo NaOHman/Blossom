@@ -2,9 +2,10 @@
 
 module Models where
 
+import Literals
+import ParserUtils
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Data.List (intercalate) 
 import Data.Maybe (catMaybes) 
 
 -- Top level model for expressions
@@ -27,96 +28,45 @@ data Block = Block { statements :: [Statement]
 
 type Statement = ()
 
-type Constructor = ()
+data Constructor = Constructor { 
+                   consName :: Name,
+                   params :: [CArg], 
+                   rtCons :: Constraint,
+                   consBody :: Maybe Block }
+
+data Stub = Stub { sName :: Name
+                 , sargs :: [SArg]
+                 , sRT :: Constraint
+                 }
+
+data Implementation = Implementation
+    { implementing :: Constraint
+    , isa :: Name
+    , because :: [Function]}
+
+data SArg where
+    SNamed :: Name -> Constraint -> SArg
+    SAnon :: Constraint -> SArg
+
+data CArg where
+    Named :: Name -> Constraint -> CArg
+    Keyword :: Name -> Literal -> Constraint -> CArg
+    AnonKey :: Literal -> Constraint -> CArg
+    Anon :: Constraint -> CArg
 
 type Exception = ()
 
 type Name = String
 
-data Class = Class { cName :: String
-                   , cParams :: [String]
-                   , functions :: [FunctionDec]
+data Class = Class { cConstraint :: Constraint
+                   , cName :: String
+                   , functions :: [Stub]
                    }
-
-data Constraint where
-    None :: Constraint
-    Partial :: Type -> Constraint
-    Concrete :: Type -> Constraint
 
 type Alias = (String, Type)
 
-data Arg where 
-    PArg   :: Name -> Constraint -> Arg
-    KArg   :: Name -> Literal -> Constraint -> Arg
-    KSplat :: Name -> Constraint -> Arg
-    PSplat :: Name -> Constraint -> Arg
 
-
-data Type = Type String [Constraint]
-
-data Data = Data Name [Constraint] [FunctionDec]
-
-makeCons n [] = Concrete $ Type n []
-makeCons n cs = if concrete cs
-                   then Concrete $ Type n cs
-                   else Partial $ Type n cs
-
-makeFunCons args rt = if concrete args 
-                        then Concrete $ Type (f rt) args
-                        else Partial $ Type (f rt) args
-    where f (Just rt) = "Function to a " ++ show rt
-          f _ = "Function to anything"
-
-concrete = all p 
-    where p (Concrete _) = True
-          p _            = False
-
-fType args rt = Type ("function to a " ++ show rt) args
-
-data FunctionDec = FunctionDec 
-                      { fName :: Maybe String
-                      , args :: Args
-                      , returnType :: Constraint
-                      }
-
-anonFDec = FunctionDec Nothing
-
-data Function = Function FunctionDec Block
-
-data Args = Args { positional :: [Arg]
-                 , keyword :: [Arg]
-                 , arrArgs :: Maybe Arg
-                 , kwArgs :: Maybe Arg
-                 }
-
-newArg :: Monad m => Args -> Arg -> m Args
-newArg a k@KArg{} = return $ a {keyword = k:keyword a}
-newArg a p@PArg{} = case arrArgs a of
-    Nothing -> case keyword a of
-         [] -> return $ a {positional = p:positional a}
-         _  -> fail "You can't define positional arugment that come after keyword arguments"
-    Just _  -> fail "You can't define positional argument after you've defined an argument that aggregates a list"
-newArg a ps@PSplat{} = case arrArgs a of
-    Nothing -> return $ a {arrArgs = Just ps}
-    Just _  -> fail "You can't define multiple argument that aggregate lists"
-newArg a ks@KSplat{} = case kwArgs a of
-    Nothing -> return $ a {kwArgs = Just ks}
-    Just _  -> fail "You can't define multiple arguments that aggregate keyword arugments"
-
-defArgs = Args { positional = []
-               , keyword = []
-               , arrArgs = Nothing
-               , kwArgs = Nothing}
-
-data Literal where
-    LChar   :: Char -> Literal
-    LString :: String -> Literal
-    LInt    :: Integer -> Literal
-    LFloat  :: Double -> Literal
-    LArray  :: [Literal] -> Literal
-    LTuple  :: [Literal] -> Literal
-    LDict   :: [(Literal,Literal)]  -> Literal
-    LSet    :: [Literal] -> Literal
+data Data = Data Name [Constraint] [Constructor]
 
 instance Show Literal where
     show (LChar   c) = "Char: " ++ show c
@@ -142,7 +92,7 @@ instance Show Args where
         showSplat "Keyword Aggregator: " sk]
         where showSplat desc s = (\s -> desc ++ show s) <$> s
               showArgs desc [] = Nothing
-              showArgs desc as = Just $ desc ++ showCsl show as
+              showArgs desc as = Just $ desc ++ showStruct as
 
 instance Show Arg where
     show (KArg n l c) = n ++ " def = " ++ show l ++ ' ':show c
@@ -150,16 +100,29 @@ instance Show Arg where
     show (KSplat n c) = n ++ " is " ++ show c
     show (PSplat n c) = n ++ " is " ++ show c
 
-instance Show Constraint where
-    show None = "Anything"
-    show (Concrete t) = prettyType t
-    show (Partial t) = prettyType t
-    
+   
 instance Show Data where
-    show (Data n cs cons) = prettyType (Type n cs) ++ "\n" ++ showCsl show cons
+    show (Data n cs cons) = "Data " ++ show n ++ "<" ++ showStruct cs ++ "> where \n" ++ showNsl show cons
 
-prettyType (Type name cs) = "Type: " ++ name ++ "<" ++ showCsl show cs ++ ">" 
+instance Show Constructor where
+    show (Constructor n ps c _) = "Constructor: " ++ n ++ "(" ++ showStruct ps ++ ")" ++ show c
 
-showCsl f = intercalate ", " . map f
-showStruct = showCsl show
-showDict = showCsl $ \(a,b) -> show a ++ ": " ++ show b
+instance Show CArg where
+    show (Named n c) = n ++ " : " ++ show c 
+    show (Keyword n d c) = n ++ " = "  ++ show d ++ " : " ++ show c 
+    show (AnonKey d c) = "Anon def " ++ show d ++ " : " ++ " : " ++ show c 
+    show (Anon c) = "Anon : " ++ show c
+
+instance Show Class where
+    show (Class cns n ss) = "Class: " ++ n ++ "\n with constraint: " ++ show cns ++ "\n" ++
+        showNsl show ss
+
+instance Show Stub where
+    show (Stub n ps rt) = "Stub: " ++ n ++ "(" ++ showStruct ps ++ ")" ++ " : " ++ show rt
+
+instance Show SArg where
+    show (SNamed n c) = n ++ " : " ++ show c
+    show (SAnon c) = "Anon : "  ++ show c
+
+prettyType (Type name cs) = "Type: " ++ name ++ "<" ++ showStruct cs ++ ">" 
+

@@ -6,7 +6,26 @@ import Control.Monad (void)
 import Text.Megaparsec
 import Text.Megaparsec.Prim
 import Text.Megaparsec.String
+import Data.List (intercalate) 
 import qualified Text.Megaparsec.Lexer as L
+
+--------------------------- General Declaration -----------------------
+genDec header ending blk = h <*> indentBlock 0 blk
+    where h = indentGuard 0 *> header <* endline (string ending)
+
+genArgs :: (MonadParsec s m Char) => [b -> m b] -> b -> m b
+genArgs ps = (miLexeme . parens) . foldSepBy comma' (tryList' ps)
+
+foldSepBy sep f acc = foldSepBy1 sep f acc <|> pure acc
+
+foldSepBy1 sep f acc = f acc >>= \a -> (sep *> foldSepBy1 sep f a) <|> pure a
+
+tryList' ps b = tryList (map ($b) ps)
+
+showCsl f = intercalate ", " . map f
+showNsl f = intercalate "\n" . map f
+showStruct = showCsl show
+showDict = showCsl $ \(a,b) -> show a ++ ": " ++ show b
 
 noBreakSpace = "\t "
 
@@ -20,6 +39,11 @@ line p = p <* anySpace <* eol'
 
 myReserves = ["if", "then", "else", "is", "while", "curry", "send", "send_wait", "MailBox", "fun", "when", "where", "because", "given", "and", "or", "not"]
 
+is' = (iString "is" *>)
+dta' = (iString "data" *>)
+fun' = iString "fun"
+arrow' = miString "->"
+
 opChars = "<>=+-/%@~*!?:.,"
 
 eol' = try (string "\n\r") <|> try (string "\r\n") 
@@ -30,6 +54,11 @@ inlineSpace = try continuation <|> some (oneOf noBreakSpace)
 maybeISpace = many inlineSpace
 
 comma' = char ',' >> anySpace
+
+miColon = miChar ':'
+miEquals = miChar '='
+
+endline p = p <* maybeISpace <* (lineCmnt' <|> void eol')
 
 miString = miLexeme . string
 miChar  = miLexeme . char
@@ -87,6 +116,12 @@ continuation = do
 
 spaceConsumer = L.space (void inlineSpace) lineCmnt blockCmnt
 
+p1 a b = a <$> b
+p2 a b c = a <$> b <*> c
+p3 a b c d = a <$> b <*> c <*> d
+p4 a b c d e = a <$> b <*> c <*> d <*> e
+p5 a b c d e f = a <$> b <*> c <*> d <*> e <*> f
+
 lineCmnt  = L.skipLineComment inlineComment
 lineCmnt' = L.skipLineComment inlineComment >> void eol'
 blockCmnt = L.skipBlockComment commentStart commentEnd
@@ -101,9 +136,12 @@ indentBlock n p = do
     then fail "Expecting indented block, didn't find one"
     else (do  
         head <- p <* eol'
-        tail <- sepBy (indentGuard lvl *> p) eol'
+        tail <- endBy (indentGuard lvl *> p) eol'
         return $ head:tail)
      
+tryList [p]    = try p
+tryList (p:ps) = try p <|> tryList ps
+
 nextIndentLevel = do
     many $ try whiteLine
     firstWs <- many wsChar

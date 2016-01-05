@@ -5,7 +5,6 @@ module Statements where
 import ParserUtils
 import Models
 import Literals
-import Operators
 import Control.Monad (void, foldM, ap)
 import Text.Megaparsec
 import Text.Megaparsec.String
@@ -27,8 +26,6 @@ classDec = genDec header "when" fStub
 implementaton = genDec header "because" function
     where header = Implementation <$> conCons <*> is' miUName
 
-function = undefined
-
 --------------------------- Data Declaration Parsing --------------------------
 
 -- Parses a data declaration
@@ -47,6 +44,3 @@ cnstrParams = genArgs parens [named, anon, keyw, anonKey]
             (AnonKey l cns) <- anonKey
             return $ Keyword n l cns
           anonKey = AnonKey <$> (miEquals *> miLiteral) <*> opCons
-
-test = runParser functionDec "cmdline"
-main = putStrLn "hello world"

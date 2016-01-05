@@ -23,3 +23,8 @@ This is code
 
 here is a \
     single escaped line of code //followed by a comment
+
+fun sum(a) -> foldL(a, 0, (+))
+fun max(a*) -> foldL(a, head(a), (x,y) -> if x > y then x else y)
+fun min(a*) -> foldL(a, head(a), (x,y) -> if x < y then x else y)
+
