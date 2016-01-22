@@ -10,7 +10,6 @@ module Functions
 where
 
 import ParserUtils
-import Literals
 import Constraints
 import Control.Monad 
 import Data.List 
@@ -25,24 +24,17 @@ posAfterS = "You can't define positional argument after you've defined an argume
 multiplePS = "You can't define multiple argument that aggregate lists"
 multipleKS = "You can't define multiple arguments that aggregate keyword arugments"
 
-data FunctionDec = FunctionDec 
+data FunctionDec l = FunctionDec 
                       { fName :: Maybe String
-                      , args :: Args
+                      , args :: Args l
                       , returnType :: Constraint
                       }
 
 
-data Function a = Function FunctionDec [a]
+data Function e l = Function (FunctionDec l) e
 
-{-data Block = Block { statements :: [Statement] -}
-                   {-, bType :: Constraint-}
-                   {-, exceptions :: [Exception] -}
-                   {-, indentLevel :: Integer-}
-                   {-}-}
-
-
-data Args = Args { positional :: [(String, Constraint)]
-                 , keyword :: [(String, Literal, Constraint)]
+data Args l = Args { positional :: [(String, Constraint)]
+                 , keyword :: [(String, l, Constraint)]
                  , arrArgs :: Maybe (String, Constraint)
                  , kwArgs :: Maybe (String, Constraint)
                  }
@@ -51,12 +43,15 @@ defArgs = Args [] [] Nothing Nothing
 
 ------------------------- Function Declaration Parsers -------------------------
 
-function lit ex stmnt = Function <$> functionDec lit <*> fBody
-    where  fBody = ex <|> blockBody
+function :: Monad m => m b -> m a -> (a -> a -> a) -> m (Function a b)
+function lit ex c = Function <$> functionDec lit <*> fBody
+    where  fBody = (try blockBody) <|> (try ex)
            blockBody = do
                 eol'
                 n <- nextIndentLevel
-                indentBlock n stmnt
+                condense <$> indentBlock n ex
+           condense [x] = x
+           condense (x:xs) = c x (condense xs)
 
 functionDec lit = try (namedFunction lit) <|> try (anonFunDec lit)
 
@@ -102,25 +97,25 @@ addKS a = do
         Nothing -> return $ a {kwArgs = Just (n, c)}
         Just _  -> fail multipleKS
 
-instance Show FunctionDec where
-    show (FunctionDec n args cons) = "Function: " ++ showName n ++
-            "\nArgs:\n" ++ show args ++ "\nReturns: " ++ show cons
-        where showName (Just n) = n
-              showName Nothing = "(Anonymous)"
+{-instance Show FunctionDec where-}
+    {-show (FunctionDec n args cons) = "Function: " ++ showName n ++-}
+            {-"\nArgs:\n" ++ show args ++ "\nReturns: " ++ show cons-}
+        {-where showName (Just n) = n-}
+              {-showName Nothing = "(Anonymous)"-}
 
-instance Show Args where
-    show (Args pos kw sp sk) = intercalate "\n" $ catMaybes [ 
-        showP     "Positional Args: " pos,
-        showK     "Keyword Args: " kw, 
-        showSplat "Array Agregator: " sp, 
-        showSplat "Keyword Aggregator: " sk]
+{-instance Show Args where-}
+    {-show (Args pos kw sp sk) = intercalate "\n" $ catMaybes [ -}
+        {-showP     "Positional Args: " pos,-}
+        {-showK     "Keyword Args: " kw, -}
+        {-showSplat "Array Agregator: " sp, -}
+        {-showSplat "Keyword Aggregator: " sk]-}
 
-showP _ [] = Nothing
-showP d as = Just $ d ++ intercalate ", " (map showArg as)
+{-showP _ [] = Nothing-}
+{-showP d as = Just $ d ++ intercalate ", " (map showArg as)-}
 
-showK _ [] = Nothing
-showK d as = Just $ d ++ intercalate ", " (map showKArg as)
-showKArg (n,v,c) = n ++ "=" ++ show v ++ " ::" ++ show c
+{-showK _ [] = Nothing-}
+{-showK d as = Just $ d ++ intercalate ", " (map showKArg as)-}
+{-showKArg (n,v,c) = n ++ "=" ++ show v ++ " ::" ++ show c-}
 
-showSplat d = fmap ((d++) . showArg)
-showArg (n,c) = n ++ " :: " ++  show c
+{-showSplat d = fmap ((d++) . showArg)-}
+{-showArg (n,c) = n ++ " :: " ++  show c-}

@@ -116,12 +116,6 @@ continuation = do
 
 spaceConsumer = L.space (void inlineSpace) lineCmnt blockCmnt
 
-p1 a b = a <$> b
-p2 a b c = a <$> b <*> c
-p3 a b c d = a <$> b <*> c <*> d
-p4 a b c d e = a <$> b <*> c <*> d <*> e
-p5 a b c d e f = a <$> b <*> c <*> d <*> e <*> f
-
 lineCmnt  = L.skipLineComment inlineComment
 lineCmnt' = L.skipLineComment inlineComment >> void eol'
 blockCmnt = L.skipBlockComment commentStart commentEnd
