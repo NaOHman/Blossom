@@ -1,4 +1,0 @@
-valid code words
-CanBeCaps
-Can1231have4234numbers
-also_underscores
