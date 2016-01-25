@@ -18,6 +18,7 @@ data Literal where
     LInt    :: Integer -> Literal
     LFloat  :: Double -> Literal
     LBool   :: Bool -> Literal
+    LNull   :: Literal
     LArray  :: (Show a) => [a] -> Literal
     {-LTuple  :: [Literal] -> Literal-}
     LDict   :: (Show a) => [(a,a)]  -> Literal

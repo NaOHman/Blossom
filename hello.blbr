@@ -1,0 +1,10 @@
+fun fac(x) ->
+    case x of
+        1 -> 1
+        _ -> x * fac(x-1)
+
+fun main() ->
+    x=4
+    print("Hello World!")
+    print("The factorial of 4 is:")
+    print(fac(x))
