@@ -13,78 +13,67 @@ import Control.Monad.State
 
 type MEval a = StateT Scope IO a
 
-data Scope = Scope {
-    func  :: M.Map String ([ArgDec], Expr),
+data Value = VInt Int
+           | VFloat Double
+           | VChar Char
+           | VLambda [ArgDec] Expr'
+           | VCons String [Value]
+
+data Scope = Scope
+    { global :: M.Map String Value
+    , local :: M.Map String Value
+    } deriving Show
+    
 
 debug = False
+
 printd :: String -> MEval ()
 printd = when debug . lift . print
 
-runProg f g a = do
-    let s = Scope (getFuns f M.empty) M.empty
-                  (getGbls g M.empty)
-    when debug $ print s
-    case lookupFun "main" s of
-        Just (args, e) -> do
-            -- TODO pass in Commandline args
-            let s' = if takesArgs args
-                then bindMain args s
-                else s
-            void $ runEval e s
-        Nothing -> putStr "Err: main not found"
-    where getFuns (EFix n a e:es) m =
-                getFuns es (M.insert n (a,e) m)
-          getFuns [] m = m 
-          getGbls (ELet (DName n) (ELit l):es) m = 
-                getGbls es (M.insert n l m)
-          getGbls [] m = m 
-          takesArgs _ = False
-          bindMain _ s = s
-
 runEval e = evalStateT (eval e)
 
-eval :: Expr -> MEval Literal
-eval (ELit l) = do
+eval :: Expr -> MEval Value
+eval (Expr _ (ELit l)) = do
     printd "Evaluating Literal"
-    return l
+    return $ lit2Val l
 
-eval (EVar i) = get >>= \s -> do
+eval (Expr pos (EVar i)) = get >>= \s -> do
     printd $ "Evaluating Variable " ++ i
     maybe 
-        (fail $ "Unknown Identifier " ++ i)
-        return (lookupVar i s)
+        (fail $ "Unknown Identifier " ++ i ++ " at " ++ show pos)
+        return (lookupInScope i s)
         
-eval (ELet p e) = do
+eval (Expr pos (ELet p e)) = do
     v <- eval e
     case match p v of
         Just bindings -> mapM (uncurry bindVar) bindings
-        otherwise     -> fail "Couldn't match pattern"
+        otherwise     -> fail  $ "Couldn't match pattern " ++ show p ++ " with value " ++ show v ++ " at " ++ show pos
     return LNull
 
-eval (ECase e cs) = do
+eval (Expr _ (ECase e cs)) = do
     v <- eval e
     pickCase v cs
-    where pickCase val [] = fail "Couldn't match pattern"
+    where pickCase val [] = fail "Couldn't match pattern" --TODO Return a fail value
           pickCase v ((p,e):cs) = case match p v of
             Just bs -> evalWithBindings bs e
             otherwise -> pickCase v cs
 
-eval (EChain e1 e2) = do 
+eval (Expr _ (EChain e1 e2)) = do 
     printd "Evaluating a Chain"
     eval e1 
     eval e2
 
-eval (EFCall n args) = do
+eval (Expr _ (EFCall n args)) = do
     printd $ "Evaluating Function " ++ n
     (pVals,kwVals)  <- mapM evalArgs args
     s <- get
-    case M.lookup n (func s) of 
-        Just (args, ex) -> do
+    case lookupInScope n s of 
+        Just (VLambda args ex) -> do
             printd $ "Found Function " ++ n
             scope <- bindArgs args pVals kwVals
             lift $ runEval ex scope
         Nothing -> case M.lookup n builtins of
-            Just (args, fun) -> do
+            Just (VLambda args fun) -> do
                 scope <- bindArgs args pVals kwVals
                 lift $ evalStateT fun scope
             Nothing -> fail $ "Err: Could not find function " ++ n
@@ -125,7 +114,7 @@ match' _ _ = False
 
 
 bindVar :: String -> Literal -> MEval ()
-bindVar i v = get >>= \s -> case lookupVar i s of 
+bindVar i v = get >>= \s -> case lookupInScope i s of 
     Just _  ->  fail "Variable are immutable"
     Nothing -> do
         put $ s {local = M.insert i v (local s)}
@@ -176,11 +165,17 @@ aggregateK (Just (a,_)) x = bindVar a (toLDict x)
 aggregateK Nothing [] = return ()
 aggregateK Nothing _  = fail "Too many keyword args"
 
-lookupVar i s = case M.lookup i (local s) of
-    Nothing -> M.lookup i (vars s)
+lookupInScope i s = case M.lookup i (local s) of
+    Nothing -> M.lookup i (global s)
     v -> v
 
-lookupFun i s = M.lookup i (func s)
+lit2Val :: Literal -> Val
+lit2Val (Literal _ (LInt i)) = VInt i
+lit2Val (Literal _ (LFloat f)) = VInt f
+lit2Val (Literal _ (LChar c)) = VInt c
+lit2Val (Literal _ (LCons c ls)) = VCons c (map lit2Val ls)
+lit2Val (Literal _ LNull) = VNull
+
 
 builtins = foldl f M.empty
    [ nar1 "+UN" id
@@ -211,34 +206,36 @@ args2 = [ArgDec nulPos (PosDec "b" None),
 uminus = nar1 "Unary -" negate 
 uplus = nar1 "Unary +" id 
 
-print' :: (String, [ArgDec], MEval Literal)
+print' :: (String, [ArgDec], MEval Val)
 print' = ("print",args1, get >>= \s -> do 
-    case lookupVar "a" s of 
-        Just (Literal _ (LInt a)) -> lift $ print $ show a
-        Just (Literal _ (LFloat a)) -> lift $ print $ show a
-        Just (Literal _ (LString a)) -> lift $ print $ show a
-        Just (Literal _ (LChar a)) -> lift $ print $ show a
-        Just (Literal _ LNull) -> lift $ print "Null"
+    case lookupInScope "a" s of 
+        Just (VInt a) -> lift $ print a
+        Just (VFloat a) -> lift $ print a
+        Just (VCons c vs) -> lift $ print $ showCons c vs
+        Just (VChar a) -> lift $ print a
+        Just VNull -> lift $ print "Null"
         otherwise -> fail "Unsupported print value"
     return $ Literal nulPos LNull)
+    where showCons "[cons]" vs@(VChar _:_) = concatMap (\VChar c -> c) vs
+          showCons c vs = c ++ " " concatMap showCons vs
 
 nar1 :: String -> (Double -> Double) -> (String, [ArgDec], MEval Literal)
 nar1 n f = (n,args1, get >>= \s -> 
-    case lookupVar "a" s of
+    case lookupInScope "a" s of
         Just (Literal _ (LInt a)) -> return $ Literal nulPos $ LInt $ round $ f $ fromIntegral a
         Just (Literal _ (LFloat a)) -> return $ Literal nulPos $ LFloat $ f a
         otherwise -> fail $ "Must provide numerical argument for " ++ n)
 
 nar2 :: String -> (Double -> Double -> Double) -> (String, [ArgDec], MEval Literal)
 nar2 n f = (n, args2, get >>= \s -> do
-    a <- numericLit n $ lookupVar "a" s 
-    b <- numericLit n $ lookupVar "b" s 
+    a <- numericLit n $ lookupInScope "a" s 
+    b <- numericLit n $ lookupInScope "b" s 
     return $ nap2 f a b)
 
 nbar2 :: String -> (Double -> Double -> Bool) -> (String, [ArgDec], MEval Literal)
 nbar2 n f = (n, args2, get >>= \s -> do
-    a <- numericLit n $ lookupVar "a" s 
-    b <- numericLit n $ lookupVar "b" s 
+    a <- numericLit n $ lookupInScope "a" s 
+    b <- numericLit n $ lookupInScope "b" s 
     return $ b2c $ nbap2 f a b)
 
 b2c True = LCons "True" []
@@ -246,20 +243,20 @@ b2c False = LCons "False" []
 
 niar2 :: String -> (Double -> Double -> Integer) -> (String, [ArgDec], MEval Literal)
 niar2 n f = (n, args2, get >>= \s -> do
-    a <- numericLit n $ lookupVar "a" s 
-    b <- numericLit n $ lookupVar "b" s 
+    a <- numericLit n $ lookupInScope "a" s 
+    b <- numericLit n $ lookupInScope "b" s 
     return $ LInt $ niap2 f a b)
 
 bar2 :: String -> (Bool -> Bool -> Bool) -> (String, [ArgDec], MEval Literal)
 
 bar2 n f = (n, args2, get >>= \s -> do
-    a <- boolLit n $ lookupVar "a" s 
-    b <- boolLit n $ lookupVar "b" s 
+    a <- boolLit n $ lookupInScope "a" s 
+    b <- boolLit n $ lookupInScope "b" s 
     return $ b2c $ f a b)
 
 bar1 :: String -> (Bool -> Bool) -> (String, [ArgDec], MEval Literal)
 bar1 n f = (n, args1, get >>= \s -> do
-    a <- boolLit n $ lookupVar "a" s 
+    a <- boolLit n $ lookupInScope "a" s 
     return $ b2c $ f a)
 
 nap2 :: (Double -> Double -> Double) -> Literal -> Literal -> Literal

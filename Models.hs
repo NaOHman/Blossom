@@ -100,10 +100,8 @@ data Literal' where
     LString :: String -> Literal'
     LInt    :: Integer -> Literal'
     LFloat  :: Double -> Literal'
-    LArray  :: [Expr] -> Literal'
-    LTuple  :: [Expr] -> Literal'
-    LDict   :: [(Expr,Expr)]  -> Literal'
-    LSet    :: [Expr] -> Literal'
+    {-LDict   :: [(Expr,Expr)]  -> Literal'-}
+    {-LSet    :: [Expr] -> Literal'-}
     LCons   :: Id -> [Expr] -> Literal'
     LNull   :: Literal'
     deriving Show
@@ -148,15 +146,24 @@ kwsdec i c   = argdec (KWSDec <$> i <*> c)
 
 literal' = ((Literal <$> getPosition) <*>)
 
-lchar a   = literal' (LChar <$> a)
-lstring a = literal' (LString <$> a)
+lchar a = literal' (LChar <$> a)
 lint a    = literal' (LInt <$> a)
 lfloat a  = literal' (LFloat <$> a)
-larray a  = literal' (LArray <$> a)
-ltuple a  = literal' (LTuple <$> a)
-ldict a   = literal' (LDict <$> a)
-lset a    = literal' (LSet <$> a)
+lstring a   = do 
+    pos <- getPosition 
+    s <- a
+    return $ Literal pos $ a2Cons $ map (Expr pos . ELit . LChar) a
+larray a  = literal' (a2Cons <$> a)
+
+ltuple a  = literal' (mktuple <$> a)
+    where mktuple es = LCons ("(" ++ replicate (length es) ',' ++ ")") es
+
+{-ldict a   = literal' (LDict <$> a)-}
+{-lset a    = literal' (LSet <$> a)-}
 lcons a b = literal' (LCons <$> a <*> b)
 lnull a   = a >> literal' (return LNull)
+
+a2Cons [] = LCons "[nil]" []
+a2Cons (l:ls) = LCons "[cons]" [a2Cons ls]
 
 nulPos = newPos "" 1 1 
