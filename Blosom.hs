@@ -15,10 +15,19 @@ type MEval a = StateT Scope IO a
 
 data Scope = Scope {
     func  :: M.Map String ([ArgDec], Expr),
+    local :: M.Map String Literal,
+    vars  :: M.Map String Literal}
 
 debug = False
 printd :: String -> MEval ()
 printd = when debug . lift . print
+
+main = do 
+    (file:mainArgs) <- getArgs
+    prog <- parseFromFile program file
+    case prog of
+        Left err -> print err
+        Right prg -> runProg (functions prg) (globals prg) mainArgs
 
 runProg f g a = do
     let s = Scope (getFuns f M.empty) M.empty
@@ -41,7 +50,6 @@ runProg f g a = do
           takesArgs _ = False
           bindMain _ s = s
 
-runEval e = evalStateT (eval e)
 
 eval :: Expr -> MEval Literal
 eval (ELit l) = do

@@ -46,6 +46,9 @@ classDec = topdec cHead fStub
           fStub = (,) <$> lName <*> argDec
 
 exlet = elet decons (equals' *> expr)
+-- TODO let cases ex.
+--  a = case even a of Just a = a
+--  == a = cast(x,Just a)
 
 excase :: MyParser Expr
 excase = genDec header cases
