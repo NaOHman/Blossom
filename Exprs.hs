@@ -1,4 +1,4 @@
-{-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts, GADTs #-}
+{-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts, GADTs, TupleSections #-}
 
 module Exprs where
 
@@ -19,179 +19,203 @@ import qualified Data.Set as S
 import Data.Maybe (fromMaybe)
 
 
-program :: Parsec String Program 
-program = condense (Program [] [] [] []) <$> sepBy topExprs (many spaceChar)
-    where topExprs = try (nonIndented efix) <|> try (nonIndented elet)
-          condense p []                = p
-          condense p (e@EFix{} :es) = condense (p {functions = e:functions p}) es
-          condense p (e@ELet{}:es)  = condense (p {globals = e:globals p}) es
+program :: MyParser Program 
+program = chain' (Program [] [] [] []) <$> (sepBy topExprs (many spaceChar) <* eof)
+    where topExprs = try (nonIndented exfix) <|> try (nonIndented exlet)
+          chain' p []                = p
+          chain' p (e@(Expr _ (EFix{})):es) = chain' (p {functions = e:functions p}) es
+          chain' p (e@(Expr _ (ELet{})):es)  = chain' (p {globals = e:globals p}) es
 
 ------------------------- Basic Expr Parsing -------------------------------
 -- TODO add opCons to the end of argDec
-fcall = EFCall <$> do 
-    name <- lName
-    genArgs [fArg, kwArg] (Call name [] [])
-    where fArg (Call n p k ) = fmap (\a -> Call n (p++[a]) k) expr
-          kwArg (Call n p k) = fmap (\a -> Call n p (k++[a])) kwTpl
-          kwTpl = (,) <$> lName <*> (equals' *> expr)
+exfcall = efcall lName (parenCsl argDecs)
+    where argDecs = tryList [pos, ks, kwS, posS]
+          pos = posArg expr
+          ks = kwArg (lName <* equals') expr
+          posS = pSplat (symbol "*" *> expr)
+          kwS = kwSplat (symbol "**" *> expr)
 
-dataDec = nonIndented $ genDec dataName consDec Data
-    where consDec = efix
-          dataName = data' *> uName  <* where'
+dataDec :: MyParser Data
+dataDec = topdec (datap dataName. return) consDec
+    where consDec = undefined
+          dataName = data_ *> uName  <* where_
 
-classDec = nonIndented $ genDec cDec fHeader ($)
-    where cDec = Class <$> lName <*> (is' *> uName <* when')
-          fHeader = (,) <$> lName <*> argDec
+classDec :: MyParser Class
+classDec = topdec cHead fStub 
+    where cHead = classp lName (is' *> uName <* when') . return
+          fStub = (,) <$> lName <*> argDec
 
-elet = ELet <$> decons <*> (equals' *> expr)
+exlet = elet decons (equals' *> expr)
 
-ecase = genDec header cases ECase
-    where header = case' *> expr <* of'
+excase :: MyParser Expr
+excase = genDec header cases
+    where header = ecase (between case_ of_ expr) . return
           cases = try inlineCase <|> try blockCase
-          inlineCase = (,) <$> (decons <* arrow') <*> expr
-          blockCase = genDec (decons <* arrow') expr (\pat es -> (pat, condense es))
+          inlineCase = (,) <$> patArr <*> expr
+          blockCase = genDec conCase expr 
+          conCase es = (,) <$> patArr <*> return (chain es) 
+          patArr = decons <* arrow'
+
+exif = try inlineIf <|> try blockIf
+
+inlineIf = if2Case <$> thenc <*> return [] <*> optional elsec
+    where thenc = Then <$> (if_ *> expr <* arrow') <*> expr
+          elsec = Else <$> (else_ *> arrow' *> expr)
+
+blockIf = if2Case <$> thenc <*> many elifc <*> optional elsec
+    where thenc = clause (\p -> Then <$> (if_ *> expr <* arrow') <*> p)
+          elifc = clause (\p -> Elif <$> (elif *> expr <* arrow') <*> p)
+          elsec = clause (\p -> Else <$> (else_ *> arrow' *> p))
+
+clause :: (MyParser Expr -> MyParser a) -> MyParser a
+clause h = try (h expr) <|> try (block h)
+    where block h = genDec (h . return . chain) expr
+
+if2Case :: Then -> [Elif] -> Maybe Else -> Expr
+if2Case = undefined
 
 --Todo implement binding syntax
 decons = name' <|> dec' <|> nil' <|> match' <|> parens decons
-    where dec' = DCons <$> uName <*> parens (decons `sepBy` comma')
-          match' = DMatch <$> cTimeLit
-          name' = DName <$> lName
-          nil' = symbol "_" >> return DNil
+    where dec' = dcons uName $ parens (decons `sepBy` comma')
+          match' = dmatch cTimeLit
+          name' = dname lName
+          nil' = dnil (symbol "_")
 
-var = EVar <$> lName
+exvar = evar lName 
 
-elambda = try blockLambda <|> try (anonDec <*> expr)
-    where anonDec = ELambda <$> argArrow
-          blockLambda = genDec anonDec expr (. condense)
+exlambda = try blockLambda <|> try (elambda argArrow expr)
+    where blockLambda = genDec conLam expr
+          conLam = elambda argArrow . return . chain
 
-efix = try blockFun <|> try (namedDec <*> expr)
-    where namedDec = EFix <$> funName <*> argArrow
-          blockFun = genDec namedDec expr (. condense)
+exfix :: MyParser Expr
+exfix = try blockFun <|> try (efix funName argArrow expr)
+    where blockFun = genDec header expr
+          header = efix funName argArrow . return . chain
 
-condense (e:es) = foldl EChain e es
+chain :: [Expr] -> Expr
+chain (e:es) = foldl conChain e es
+    where conChain e1@(Expr p _) e2 = Expr p (EChain e1 e2)
 
-expr = lexeme (makeExprParser term operators <?> "expression")
-term = tryList [elet, ecase, fcall, eLiteral, var, parens expr]
+expr = makeExprParser term operators <?> "expression"
+term = tryList [exif, exlet, excase, exfcall, exliteral, exvar, parens expr]
 
-eLiteral = ELit <$> literal
-operators = 
-{-[[uOp "+", uOp "-"],-}
-        [[bOp "*", bOp "/", bOp "//", bOp "%"],
+operators =  [[uOp "+", uOp "-"],
+         [bOp "*", bOp "/", bOp "//", bOp "%"],
          [bOp "+", bOp "-"],
          [bOp "==", bOp "<", bOp "<=", bOp ">", bOp ">="],
-         [ruOp "not"],
-         [rbOp "and", rbOp "or", rbOp "xor"]]
+         [uOp "not"],
+         [bOp "and", bOp "or", bOp "xor"]]
 
-uOp = op1 symbol
-bOp = op2 symbol
-ruOp = op1 rword
-rbOp = op2 rword
-op1 p s = Prefix (p s *> pure (\a -> EFCall $ Call (s++"UN") [a] []))
-op2 p s = InfixL (p s *> pure (\a b -> EFCall $ Call s [b,a] []))
+uOp s = Prefix (try (rword s) >> return (\e@(Expr p _) -> 
+    Expr p (EFCall (s++"UN") [Arg p $ PosArg e])))
+
+bOp s = InfixL (try (rword s) >> return (\e1@(Expr p _) e2 ->
+    Expr p (EFCall s [Arg p $ PosArg e1, Arg p $ PosArg e2])))
 
 --------------------- Literal Parsers ---------------------------------
 
-literal = lexeme $ tryList [lFloat, lBool, lInt, lArray expr, lTuple expr,
+exliteral :: MyParser Expr
+exliteral = elit $ lexeme $ tryList [lFloat, lBool, lInt, lArray expr, lTuple expr,
                                 lCons expr, lChar, lString, lDict expr, lSet expr]
+
+cTimeLit :: MyParser Literal
 cTimeLit = lexeme $ tryList [lFloat, lBool, lInt, lArray cLit, lTuple cLit,
                                 lCons cLit, lChar, lString, lDict cLit, lSet cLit]
-    where cLit = ELit <$> cTimeLit
+    where cLit = elit cTimeLit
 
 -- Parses a Character literal
-lChar = LChar <$> between quote quote (escapedChar ecs ers)
-    where ecs = zip "'\\trn" "'\\\t\r\n"
-          ers = "\\\n\r"
-          quote = char '\''
+lChar :: MyParser Literal
+lChar = lchar $ between (char '"') (char '"') myChar
 
 -- Parses a String literal
-lString = LString <$> between (char '"') (char '"') (many (escapedChar ecs ers))
-    where ecs = zip "\"\\trn" "\"\\\t\r\n"
-          ers = "\\\n\r\""
+lString = lstring $ between (char '"') (char '"') (many chars)
+    where chars = escapedChar <|> noneOf "\""
+    
+myChar = escapedChar <|> noneOf "'\"\\\n\t\r"
+
+escapedChar :: MyParser Char
+escapedChar = char '\\' >> choice (zipWith escape codes reps) <?> "Bad escape code"
+    where escape c r = char c >> return r
+          codes = "ntr\\\"'" 
+          reps = "\n\t\r\\\"'" 
 
 -- Parses and Integer Literal
-lInt = LInt <$> L.integer
+lInt = lint L.integer
 
 -- Parses a float literal
-lFloat = LFloat <$> (try sufflt <|> flt)
+lFloat = lfloat (try sufflt <|> flt)
     where flt    = L.float
           sufflt = fromIntegral <$> L.integer <* char 'f'
 
 lCons p = try complexCons <|> try noArgs
-    where noArgs = LCons <$> uName <*> return []
-          complexCons = LCons <$> uName <*> lStruct "(" ")" p
+    where noArgs = lcons uName (return [])
+          complexCons = lcons uName (lStruct "(" ")" p)
 
 -- Parses an array literal
-lArray p = LArray <$> lStruct "[" "]" p
+lArray p = larray $ lStruct "[" "]" p
 
 -- Parses a set literal, empty brackets are presumed to be Dicts
-lSet p = LSet <$> lStruct "{" "}" p
+lSet p = lset $ lStruct "{" "}" p
 
+lBool :: MyParser Literal
 lBool = true <|> false
-    where true = rword "True" >> return (LCons "True" [])
-          false = rword "False" >> return (LCons "False" [])
+    where true = getPosition <* rword "True" >>= \p -> return (Literal p (LCons "True" []))
+          false = getPosition <* rword "False" >>= \p -> return (Literal p (LCons "False" []))
 
 -- Parses a Dict literal
-lDict p = LDict <$> lStruct "{" "}" (dictPair p)
+lDict p = ldict $ lStruct "{" "}" (dictPair p)
 
 -- Parses a Dictionary keyword pair
 dictPair p = (,) <$> (expr <* colon') <*> p
 
 -- Parses a Tuple literal 
-lTuple p = parens $ do 
+lTuple p = getPosition >>= \pos -> parens $ do 
               head <- p <* comma'
               tail <- sepBy1 p comma'
-              return $ LTuple (head:tail)
+              return $ Literal pos (LTuple (head:tail))
 
 -- Parses a generic literal struct
 lStruct s e p = between (symbol s) (symbol e) (sepBy p comma')
-
--- Handles character escapes in literals
-escapedChar escps errs = escape <|> noneOf errs
-    where escape = do
-                        char '\\'
-                        c <- anyChar
-                        case lookup c escps of
-                            Just ec -> return ec
-                            Nothing -> fail $ "invalid escape sequence \\" ++ show c
 
 posAfterKw = "You can't define positional arugment that come after keyword arguments"
 posAfterS = "You can't define positional argument after you've defined an argument that aggregates a list"
 multiplePS = "You can't define multiple argument that aggregate lists"
 multipleKS = "You can't define multiple arguments that aggregate keyword arugments"
 
-defArgs = Args [] [] Nothing Nothing
+{-defArgs = Args [] [] Nothing Nothing-}
 
 ------------------------- Function Declaration Parsers -------------------------
 
 -- Parses function arguments
 argArrow = argDec <* arrow'
-argDec = genArgs [addK, addP, addPS, addKS] defArgs
+argDec =  undefined
+{-genArgs [addK, addP, addPS, addKS] defArgs-}
     
-addK a = do
-    n <- lName
-    v <- equals' *> cTimeLit
-    c <- opCons
-    return  $ a {keyword = (n,v,c):keyword a}
+{-addK a = do-}
+    {-n <- lName-}
+    {-v <- equals' *> cTimeLit-}
+    {-c <- opCons-}
+    {-return  $ a {keyword = (n,v,c):keyword a}-}
 
-addP a = do 
-    n <- lName
-    c <- opCons
-    case arrArgs a of
-        Nothing -> case keyword a of
-             [] -> return $ a {positional = (n,c):positional a}
-             _  -> fail posAfterKw
-        Just _  -> fail posAfterS
+{-addP a = do -}
+    {-n <- lName-}
+    {-c <- opCons-}
+    {-case arrArgs a of-}
+        {-Nothing -> case keyword a of-}
+             {-[] -> return $ a {positional = (n,c):positional a}-}
+             {-_  -> fail posAfterKw-}
+        {-Just _  -> fail posAfterS-}
 
-addPS a = do
-    n <- symbol "*" *> lName
-    c <- opCons
-    case arrArgs a of
-        Nothing -> return $ a {arrArgs = Just (n,c)}
-        Just _  -> fail multiplePS
+{-addPS a = do-}
+    {-n <- symbol "*" *> lName-}
+    {-c <- opCons-}
+    {-case arrArgs a of-}
+        {-Nothing -> return $ a {arrArgs = Just (n,c)}-}
+        {-Just _  -> fail multiplePS-}
 
-addKS a = do
-    n <- symbol "**" *> lName
-    c <- opCons
-    case kwArgs a of
-        Nothing -> return $ a {kwArgs = Just (n, c)}
-        Just _  -> fail multipleKS
+{-addKS a = do-}
+    {-n <- symbol "**" *> lName-}
+    {-c <- opCons-}
+    {-case kwArgs a of-}
+        {-Nothing -> return $ a {kwArgs = Just (n, c)}-}
+        {-Just _  -> fail multipleKS-}

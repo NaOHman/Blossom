@@ -6,17 +6,30 @@ import Control.Monad (void)
 import Text.Megaparsec
 import Text.Megaparsec.Prim
 import Text.Megaparsec.String
+import qualified Data.Text as T
 import Data.List (intercalate) 
+import Control.Monad.State
+import Control.Monad.Trans
 import qualified Text.Megaparsec.Lexer as L
 
 --------------------------- General Declaration -----------------------
-symbol = L.symbol sc
 
+type MyParser a = StateT Int Parser a
+
+{-symbol :: MyParser String-}
+
+symbol :: String -> MyParser String
+symbol = L.symbol sc 
+
+lexeme :: MyParser a -> MyParser a
 lexeme = L.lexeme sc
 
+sc :: MyParser ()
 sc = L.space (void $ oneOf " \t") lineCmnt blockCmnt
 
-indentSC = L.space (void spaceChar) lineCmnt blockCmnt
+indentSC :: MyParser ()
+indentSC = L.space indentConsumer lineCmnt blockCmnt
+    where indentConsumer = void spaceChar
 
 lineCmnt  = L.skipLineComment inlineComment
     where inlineComment = "//"
@@ -28,14 +41,18 @@ blockCmnt = L.skipBlockComment commentStart commentEnd
 nonIndented = L.nonIndented indentSC
 indentBlock = L.indentBlock indentSC
 
-myReserves = ["if", "then", "else", "is", "while", "curry", "send", "send_wait", "MailBox", "fun", "when", "where", "because", "given", "and", "or", "not", "True", "False"]
+myReserves = ["if", "then", "else", "elif", "is", "while", "curry", "send", "send_wait", "MailBox", "fun", "when", "where", "because", "given", "and", "or", "not", "True", "False"]
 
 is' = rword "is"
+if_ = rword "if"
+elif = rword "elif"
+then_ = rword "then"
+else_ = rword "else"
 when' = rword "when"
-where' = rword "where"
-data' = rword "data"
-case' = rword "case"
-of' = rword "of"
+where_ = rword "where"
+data_ = rword "data"
+case_ = rword "case"
+of_ = rword "of"
 arrow' = symbol "->"
 equals' = symbol "="
 comma' = symbol ","
@@ -56,7 +73,7 @@ parens = between (symbol "(") (symbol ")")
 aBrackets = between (symbol "<") (symbol ">")
 
 rword w = string w *> notFollowedBy alphaNumChar *> sc
-identifier firstCharParser = p >>= rwcheck
+identifier firstCharParser = lexeme (p >>= rwcheck)
     where p         = (:) <$> firstCharParser <*> many nameChars
           rwcheck x = if x `elem` myReserves
                       then fail $ "You can't use " ++ show x ++ " It's all mine"
@@ -67,19 +84,9 @@ nameChars = alphaNumChar <|> char '_'
 tryList [p]    = try p
 tryList (p:ps) = try p <|> tryList ps
 
-topdec = nonIndented . genDec
+topdec a b = nonIndented (genDec a b)
 
-genDec :: Parser a -> Parser b -> (a -> [b] -> c) -> Parser c
-genDec header item cons = indentBlock $ do
-    h <- header
-    return $ L.IndentSome Nothing (return . cons h) item
+genDec :: ([b] -> MyParser a) -> MyParser b -> MyParser a
+genDec a b = indentBlock $ return $ L.IndentSome Nothing a b
 
-indentSome :: MonadParsec s m Char => ([b] -> m a) -> m b -> m a
-indentSome f p = indentBlock $ return $ 
-                    L.IndentSome Nothing f p
-
-genArgs ps = (lexeme . parens) . foldSepBy comma' (tryList' ps)
-    where foldSepBy sep f acc = foldSepBy1 sep f acc <|> pure acc
-          foldSepBy1 sep f acc = f acc >>= \a -> 
-                    (sep *> foldSepBy1 sep f a) <|> pure a
-          tryList' ps b = tryList (map ($b) ps)
+parenCsl p = lexeme $ parens $ sepBy p comma'
