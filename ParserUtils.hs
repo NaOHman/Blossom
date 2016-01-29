@@ -14,7 +14,7 @@ import qualified Text.Megaparsec.Lexer as L
 
 --------------------------- General Declaration -----------------------
 
-type MyParser a = StateT Int Parser a
+type MyParser a = StateT Int (Parsec String) a
 
 {-symbol :: MyParser String-}
 

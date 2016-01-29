@@ -14,16 +14,16 @@ import Control.Monad.State
 
 main = do 
     (file:mainArgs) <- getArgs
-    prog <- parseFromFile program file
+    prog <- parseBlosom file
     case prog of
         Left err -> print err
-        Right prg -> runProg (functions prg) (globals prg) mainArgs
+        Right prg -> runProg prg
 
-runProg f g a = do
-    let s = Scope (getFuns f M.empty) M.empty
-                  (getGbls g M.empty)
+runProg prog = do
+    let gbl  = getFuns (functions prog) M.empty
+        s = Scope (getGbls (globals prog) gbl) M.empty
     when debug $ print s
-    case lookupFun "main" s of
+    case getFunction "main" s of
         Just (args, e) -> do
             -- TODO pass in Commandline args
             let s' = if takesArgs args
@@ -31,11 +31,12 @@ runProg f g a = do
                 else s
             void $ runEval e s
         Nothing -> putStr "Err: main not found"
-    where getFuns (EFix n a e:es) m =
-                getFuns es (M.insert n (a,e) m)
+          --TODO Preprocessor guaruntee strict literal
+    where getFuns (Expr _ (EFix n a e):es) m =
+                getFuns es (M.insert n (VLambda a e) m)
           getFuns [] m = m 
-          getGbls (ELet (DName n) (ELit l):es) m = 
-                getGbls es (M.insert n l m)
+          getGbls (Expr _ (ELet (DName n) (Expr _ (ELit l))):es) m = 
+                getGbls es (M.insert n (lit2Val l) m)
           getGbls [] m = m 
           takesArgs _ = False
           bindMain _ s = s

@@ -3,7 +3,8 @@
 module Exprs where
 
 import ParserUtils
-import Control.Monad (void, foldM, ap)
+import Control.Monad (void, foldM, ap, liftM)
+import Control.Monad.State
 import Constraints
 import Models
 import Data.List
@@ -18,6 +19,8 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Maybe (fromMaybe)
 
+
+parseBlosom = parseFromFile (evalStateT program 0)
 
 program :: MyParser Program 
 program = chain' (Program [] [] [] []) <$> (sepBy topExprs (many spaceChar) <* eof)
@@ -172,10 +175,11 @@ lDict p = ldict $ lStruct "{" "}" (dictPair p)
 dictPair p = (,) <$> (expr <* colon') <*> p
 
 -- Parses a Tuple literal 
-lTuple p = getPosition >>= \pos -> parens $ do 
+lTuple p = parens $ do 
+              pos <- getPosition
               head <- p <* comma'
               tail <- sepBy1 p comma'
-              return $ Literal pos (LTuple (head:tail))
+              ltuple (head:tail)
 
 -- Parses a generic literal struct
 lStruct s e p = between (symbol s) (symbol e) (sepBy p comma')

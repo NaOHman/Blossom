@@ -33,14 +33,11 @@ data Class = Class SourcePos Class'
 data Class' = Class' Id Id [(Id, [ArgDec])]
     deriving Show
 
-data Pat = Pat SourcePos Pat'
-    deriving Show
-
-data Pat' where
-    DName  :: Id -> Pat'
-    DCons  :: Id -> [Pat] -> Pat'
-    DMatch :: Literal -> Pat'
-    DNil   :: Pat'
+data Pat where
+    DName  :: Id -> Pat
+    DCons  :: Id -> [Pat] -> Pat
+    DMatch :: Literal -> Pat
+    DNil   :: Pat
     deriving Show
 
 data Then = Then Expr Expr
@@ -110,12 +107,10 @@ datap n c = Data <$> getPosition <*> (Data' <$> n <*> c)
 
 classp v n c = Class <$> getPosition <*> (Class' <$> n <*> v <*> c)
 
-pat = ((Pat <$> getPosition) <*>)
-
-dname  i   = pat (DName  <$> i)
-dcons  i p = pat (DCons  <$> i <*> p)
-dmatch i   = pat (DMatch <$> i)
-dnil   p   = p >> pat (return DNil)
+dname  i   = DName  <$> i
+dcons  i p = DCons  <$> i <*> p
+dmatch i   = DMatch <$> i
+dnil   p   = p >> return DNil
 
 expr' = ((Expr <$> getPosition) <*>)
 
@@ -149,21 +144,23 @@ literal' = ((Literal <$> getPosition) <*>)
 lchar a = literal' (LChar <$> a)
 lint a    = literal' (LInt <$> a)
 lfloat a  = literal' (LFloat <$> a)
-lstring a   = do 
-    pos <- getPosition 
-    s <- a
-    return $ Literal pos $ a2Cons $ map (Expr pos . ELit . LChar) a
+lstring p  = do
+    pos <- getPosition
+    s <- p
+    return $ Literal pos (a2Cons $ str2Exs pos s)  
+    where str2Exs p = map (Expr p . ELit . Literal p .LChar)
 larray a  = literal' (a2Cons <$> a)
+ltuple es  = getPosition >>= \p -> return $ 
+    Literal p (LCons ("(" ++ replicate (length es) ',' ++ ")") es)
 
-ltuple a  = literal' (mktuple <$> a)
-    where mktuple es = LCons ("(" ++ replicate (length es) ',' ++ ")") es
-
-{-ldict a   = literal' (LDict <$> a)-}
-{-lset a    = literal' (LSet <$> a)-}
+ldict a   = undefined
+lset a    = undefined
 lcons a b = literal' (LCons <$> a <*> b)
 lnull a   = a >> literal' (return LNull)
 
+a2Cons :: [Expr] -> Literal'
 a2Cons [] = LCons "[nil]" []
-a2Cons (l:ls) = LCons "[cons]" [a2Cons ls]
+a2Cons (e@(Expr p _):es) =  LCons "[cons]" [e, next p es]
+    where next p = Expr p . ELit . Literal p . a2Cons
 
 nulPos = newPos "" 1 1 
