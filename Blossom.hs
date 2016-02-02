@@ -13,30 +13,29 @@ import System.Environment
 import Control.Monad.State
 
 main = do 
-    (file:mainArgs) <- getArgs
-    prog <- parseBlosom file
+    (dbg, file, mainArgs) <- parseArgs <$> getArgs
+    prog <- parseBlossom file
     case prog of
         Left err -> print err
-        Right prg -> runProg prg
+        Right prg -> runProg dbg prg
 
-runProg prog = do
-    let gbl  = getFuns (functions prog) M.empty
-        s = Scope (getGbls (globals prog) gbl) M.empty
-    when debug $ print s
+parseArgs ("-d":f:as) = (True, f, as)
+parseArgs (f:as) = (False, f, as)
+
+runProg dbg prog = do
+    let s = Scope (getGbls (globals prog)) M.empty
+    when dbg $ print s
     case getFunction "main" s of
         Just (args, e) -> do
             -- TODO pass in Commandline args
             let s' = if takesArgs args
                 then bindMain args s
                 else s
-            void $ runEval e s
+            void $ runEval e (s,dbg)
         Nothing -> putStr "Err: main not found"
           --TODO Preprocessor guaruntee strict literal
-    where getFuns (Expr _ (EFix n a e):es) m =
-                getFuns es (M.insert n (VLambda a e) m)
-          getFuns [] m = m 
-          getGbls (Expr _ (ELet (DName n) (Expr _ (ELit l))):es) m = 
-                getGbls es (M.insert n (lit2Val l) m)
-          getGbls [] m = m 
+    where getGbls = fromList . map f 
+          f (Expr _ (EFix n a e)) = (n, VLambda a e)
+          f (Expr _ (ELet (DName n) (Expr _ (ELit l)))) = (n, lit2Val l)
           takesArgs _ = False
           bindMain _ s = s

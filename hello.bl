@@ -1,15 +1,12 @@
-fun id(x) -> x
-  
-fun fac(x) -> 
-    case x of
-        1 -> 1
-        _ -> x * fac(x - 1)
+fun fac(x) -> case x of
+    1 -> 1
+    _ -> x * fac(1 - x)
 
 fun square(x) -> x * x
 
 fun main() ->
-    x = 4
+    x = 5
     print(square(x))
     print("Hello World!")
-    print("The factorial of 4 is:")
+    print("The factorial of 5 is:")
     print(fac(x))

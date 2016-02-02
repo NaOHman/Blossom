@@ -19,15 +19,22 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Maybe (fromMaybe)
 
-
-parseBlosom = parseFromFile (evalStateT program 0)
+parseBlossom = parseFromFile (evalStateT program 0)
 
 program :: MyParser Program 
-program = chain' (Program [] [] [] []) <$> (sepBy topExprs (many spaceChar) <* eof)
-    where topExprs = try (nonIndented exfix) <|> try (nonIndented exlet)
-          chain' p []                = p
-          chain' p (e@(Expr _ (EFix{})):es) = chain' (p {functions = e:functions p}) es
-          chain' p (e@(Expr _ (ELet{})):es)  = chain' (p {globals = e:globals p}) es
+program = toPrg <$> (many statement <* eof)
+    where toPrg = foldl f (Program [] [] [] [])
+          f p (SEx e) = p {globals   = e : globals p}
+          f p (SDa d) = p {datatypes = d : datatypes p}
+          f p (SCl c) = p {classes   = c : classes p}
+          f p (SIn i) = p {instances = i : instances p}
+
+statement = tryList
+                [ SEx <$> (indentGuard 1 *> exfix) 
+                , SEx <$> (indentGuard 1 *> exlet)
+                , SDa <$> (indentGuard 1 *> dataDec) 
+                , SCl <$> (indentGuard 1 *> classDec) 
+                , SIn <$> (indentGuard 1 *> instnc)]
 
 ------------------------- Basic Expr Parsing -------------------------------
 -- TODO add opCons to the end of argDec
@@ -39,71 +46,68 @@ exfcall = efcall lName (parenCsl argDecs)
           kwS = kwSplat (symbol "**" *> expr)
 
 dataDec :: MyParser Data
-dataDec = topdec (datap dataName. return) consDec
-    where consDec = undefined
-          dataName = data_ *> uName  <* where_
+dataDec = Data <$> getPosition <*> dataName <*> constrs
+    where constrs = block ((,) <$> uName <*> dataArgs)
+          dataName = data_ *> decCons uName <* where_
 
 classDec :: MyParser Class
-classDec = topdec cHead fStub 
-    where cHead = classp lName (is' *> uName <* when') . return
-          fStub = (,) <$> lName <*> argDec
+classDec = Class <$> getPosition <*> consOrList lName <*> cheader <*> stubs
+    where cheader = is' *> uName <* when'
+          stubs = block $ (,,) <$> lName <*> csl justConsArg <*> recSufCons
+
+instnc :: MyParser Instance
+instnc = Instance <$> getPosition <*> consOrList uName 
+                  <*> iheader <*> block exfix 
+    where iheader = is' *> uName <* because'
+
+consOrList p = do 
+    c <- optional p
+    case c of
+        Just n -> DecCons <$> return n <*> params
+        Nothing -> DecCons <$> return "" <*> angles constraint
+    where params = fromMaybe [] <$> optional (angles constraint)
+
+decCons :: MyParser Id -> MyParser DecCons
+decCons p = DecCons <$> p <*> params
+    where params = fromMaybe [] <$> optional (angles constraint)
 
 exlet = elet decons (equals' *> expr)
 -- TODO let cases ex.
 --  a = case even a of Just a = a
 --  == a = cast(x,Just a)
 
+-- TODO Fix onecase def
 excase :: MyParser Expr
-excase = genDec header cases
-    where header = ecase (between case_ of_ expr) . return
-          cases = try inlineCase <|> try blockCase
-          inlineCase = (,) <$> patArr <*> expr
-          blockCase = genDec conCase expr 
-          conCase es = (,) <$> patArr <*> return (chain es) 
-          patArr = decons <* arrow'
+excase = ecase header (inlineOrBlock aCase)
+    where header = case_ *> expr <* of_
+          aCase = (,) <$> (decons <* arrow') <*> exblock 
 
-exif = try inlineIf <|> try blockIf
 
-inlineIf = if2Case <$> thenc <*> return [] <*> optional elsec
-    where thenc = Then <$> (if_ *> expr <* arrow') <*> expr
-          elsec = Else <$> (else_ *> arrow' *> expr)
-
-blockIf = if2Case <$> thenc <*> many elifc <*> optional elsec
-    where thenc = clause (\p -> Then <$> (if_ *> expr <* arrow') <*> p)
-          elifc = clause (\p -> Elif <$> (elif *> expr <* arrow') <*> p)
-          elsec = clause (\p -> Else <$> (else_ *> arrow' *> p))
-
-clause :: (MyParser Expr -> MyParser a) -> MyParser a
-clause h = try (h expr) <|> try (block h)
-    where block h = genDec (h . return . chain) expr
-
-if2Case :: Then -> [Elif] -> Maybe Else -> Expr
-if2Case = undefined
+exblock ::  MyParser Expr
+exblock = liftM chain (inlineOrBlock expr) 
 
 --Todo implement binding syntax
-decons = name' <|> dec' <|> nil' <|> match' <|> parens decons
-    where dec' = dcons uName $ parens (decons `sepBy` comma')
+decons = tryList [name',  dec', nil', match', parens decons]
+    where dec' = dcons uName $ csl decons
           match' = dmatch cTimeLit
           name' = dname lName
           nil' = dnil (symbol "_")
 
 exvar = evar lName 
 
-exlambda = try blockLambda <|> try (elambda argArrow expr)
-    where blockLambda = genDec conLam expr
-          conLam = elambda argArrow . return . chain
+exlambda = elambda argArrow exblock
 
 exfix :: MyParser Expr
-exfix = try blockFun <|> try (efix funName argArrow expr)
-    where blockFun = genDec header expr
-          header = efix funName argArrow . return . chain
+exfix = efix funName argArrow exblock
 
 chain :: [Expr] -> Expr
+chain [e] = e
 chain (e:es) = foldl conChain e es
     where conChain e1@(Expr p _) e2 = Expr p (EChain e1 e2)
 
 expr = makeExprParser term operators <?> "expression"
-term = tryList [exif, exlet, excase, exfcall, exliteral, exvar, parens expr]
+--todo exif
+term = tryList [excase, exfcall, exlet, exliteral, exvar, parens expr]
 
 operators =  [[uOp "+", uOp "-"],
          [bOp "*", bOp "/", bOp "//", bOp "%"],
@@ -120,14 +124,17 @@ bOp s = InfixL (try (rword s) >> return (\e1@(Expr p _) e2 ->
 
 --------------------- Literal Parsers ---------------------------------
 
+--TODO Figure out how to data-tize sets/dicts
 exliteral :: MyParser Expr
 exliteral = elit $ lexeme $ tryList [lFloat, lBool, lInt, lArray expr, lTuple expr,
-                                lCons expr, lChar, lString, lDict expr, lSet expr]
+                                lCons expr, lChar, lString]
+{-, lDict expr, lSet expr-}
 
 cTimeLit :: MyParser Literal
 cTimeLit = lexeme $ tryList [lFloat, lBool, lInt, lArray cLit, lTuple cLit,
-                                lCons cLit, lChar, lString, lDict cLit, lSet cLit]
+                                lCons cLit, lChar, lString]
     where cLit = elit cTimeLit
+{-, lDict cLit, lSet cLit-}
 
 -- Parses a Character literal
 lChar :: MyParser Literal
@@ -194,8 +201,18 @@ multipleKS = "You can't define multiple arguments that aggregate keyword arugmen
 ------------------------- Function Declaration Parsers -------------------------
 
 -- Parses function arguments
-argArrow = argDec <* arrow'
-argDec =  undefined
+argArrow =  csl (argWithCons opSufCons) <* arrow'
+
+dataArgs = csl (argWithCons recSufCons <|> try justConsArg)
+                
+justConsArg  = argdec (PosDec <$> return "") constraint
+
+argWithCons c = tryList $ map ($ c) [kwsdec, psdec, kwdec, pdec]
+    where pdec = argdec (PosDec <$> lName)
+          kwdec = argdec (KWDec <$> lName <*> (equals' *> cTimeLit))
+          kwsdec = argdec (KWSDec <$> (lName <* symbol "**"))
+          psdec = argdec (PSDec <$> (lName <* symbol "*"))
+
 {-genArgs [addK, addP, addPS, addKS] defArgs-}
     
 {-addK a = do-}

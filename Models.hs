@@ -2,36 +2,52 @@
 
 module Models where
 
-import Constraints
 import Text.Megaparsec
 import Text.Megaparsec.Pos
 import Text.Megaparsec.Prim
 
 type Id = String
 
+data Statement = SEx Expr | SDa Data | SCl Class | SIn Instance
+
 data Program = Program 
-    { functions :: [Expr] 
-    , globals   :: [Expr]
+    { globals   :: [Expr]
     , datatypes :: [Data]
     , classes   :: [Class] 
-    }
-    deriving Show
+    , instances :: [Instance] 
+    } deriving Show
     -- todo type aliases and error types
 
-data Data = Data SourcePos Data'
+data Constraint where
+    None :: Constraint
+    FunCons :: [Constraint] -> Constraint -> Constraint
+    ValCons :: Id -> [Constraint] -> Constraint
     deriving Show
 
-data Data' = Data'
-    { dName :: Id
-    , constructors :: [Expr]
-    }
-    deriving Show
+data Data = Data
+    { dpos :: SourcePos
+    , dName :: DecCons
+    , constructors :: [(Id, [ArgDec])]
+    } deriving Show
 
-data Class = Class SourcePos Class'
-    deriving Show
+data DecCons = DecCons 
+    { decName :: Id
+    , dParams :: [Constraint]
+    } deriving Show
 
-data Class' = Class' Id Id [(Id, [ArgDec])]
-    deriving Show
+data Class = Class
+    { cpos :: SourcePos
+    , cVar :: DecCons
+    , cname :: Id 
+    , cstubs :: [(Id, [ArgDec], Constraint)]
+    } deriving Show
+
+data Instance = Instance 
+    { ipos :: SourcePos
+    , icons :: DecCons
+    , instncOf :: Id
+    , ifuns :: [Expr]
+    } deriving Show
 
 data Pat where
     DName  :: Id -> Pat
@@ -68,15 +84,12 @@ data Arg' where
     KWSplat :: Expr -> Arg'
     deriving Show
 
-data FDec = FDec SourcePos FDec'
-    deriving Show
-
-data FDec' = FDec'
-    { fName :: Maybe String
+data FDec = FDec
+    { fpos :: SourcePos
+    , fName :: Maybe String
     , args :: [ArgDec]
     , returnType :: Constraint
-    }
-    deriving Show
+    } deriving Show
 
 -- TODO FIX ARGS
 data ArgDec = ArgDec SourcePos ArgDec'
@@ -103,9 +116,7 @@ data Literal' where
     LNull   :: Literal'
     deriving Show
 
-datap n c = Data <$> getPosition <*> (Data' <$> n <*> c)
-
-classp v n c = Class <$> getPosition <*> (Class' <$> n <*> v <*> c)
+classp v n c = Class <$> getPosition <*> n <*> v <*> c
 
 dname  i   = DName  <$> i
 dcons  i p = DCons  <$> i <*> p
@@ -130,14 +141,9 @@ kwArg   n p = arg (KWArg <$> n <*> p)
 pSplat  p   = arg (PSplat <$> p)
 kwSplat p   = arg (KWSplat <$> p)
 
-fdec n a c = FDec <$> getPosition <*> (FDec' <$> n <*> a <*> c)
+fdec n a c = FDec <$> getPosition <*> n <*> a <*> c
 
-argdec = ((ArgDec <$> getPosition) <*>)
-
-posdec i c   = argdec (PosDec <$> i <*> c)
-kwdec  i l c = argdec (KWDec  <$> i <*> l <*> c)
-psdec  i c   = argdec (PSDec  <$> i <*> c)
-kwsdec i c   = argdec (KWSDec <$> i <*> c)
+argdec p c = ArgDec <$> getPosition <*> (p <*> c)
 
 literal' = ((Literal <$> getPosition) <*>)
 

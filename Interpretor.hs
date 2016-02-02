@@ -14,7 +14,9 @@ import System.Environment
 import Control.Monad.State
 import Data.List (intercalate)
 
-type MEval a = StateT Scope IO a
+type MEval a = StateT EvalSt IO a
+
+type EvalSt = (Scope, Bool)
 
 data Value = VInt Integer
            | VFloat Double
@@ -29,10 +31,14 @@ data Scope = Scope
     } 
     
 
-debug = False
-
 printd :: String -> MEval ()
-printd = when debug . lift . print
+printd =  whenDebug . lift . print
+
+getScope :: MEval Scope
+getScope = liftM fst get
+
+whenDebug :: MEval () -> MEval ()
+whenDebug m = get >>= \(_,dbg) -> when dbg m
 
 runEval e = evalStateT (eval e)
 
@@ -41,7 +47,7 @@ eval (Expr _ (ELit l)) = do
     printd "Evaluating Literal"
     return $ lit2Val l
 
-eval (Expr pos (EVar i)) = get >>= \s -> do
+eval (Expr pos (EVar i)) = getScope >>= \s -> do
     printd $ "Evaluating Variable " ++ i
     maybe 
         (fail $ "Unknown Identifier " ++ i ++ " at " ++ show pos)
@@ -70,16 +76,16 @@ eval (Expr _ (EChain e1 e2)) = do
 eval (Expr _ (EFCall n args)) = do
     printd $ "Evaluating Function " ++ n
     (pVals,kwVals)  <- evalArgs args
-    s <- get
+    s <- getScope
     case getFunction n s of 
         Just (args,ex) -> do
             printd $ "Found Function " ++ n
-            scope <- bindArgs args pVals kwVals
-            lift $ runEval ex scope
+            st <- bindArgs args pVals kwVals
+            lift $ runEval ex st
         Nothing -> case getBuiltin n of
             Just (args, fun) -> do
-                scope <- bindArgs args pVals kwVals
-                lift $ evalStateT fun scope
+                st <- bindArgs args pVals kwVals
+                lift $ evalStateT fun st
             Nothing -> fail $ "Err: Could not find function " ++ n
 
 getFunction :: String -> Scope -> Maybe ([ArgDec], Expr)
@@ -126,16 +132,19 @@ foldMatch _ _ = Nothing
 
 
 bindVar :: String -> Value -> MEval ()
-bindVar i v = get >>= \s -> case lookupInScope i s of 
+bindVar i v = getScope >>= \s -> case lookupInScope i s of 
     Just _  ->  fail "Variable are immutable"
     Nothing -> do
-        put $ s {local = M.insert i v (local s)}
-        when debug (get >>= lift . print)
+        putScope $ s {local = M.insert i v (local s)}
+        whenDebug (getScope >>= lift . print)
+
+putScope :: Scope -> MEval ()
+putScope s = modify (\(_,d) -> (s,d))
 
 
-bindArgs :: [ArgDec] -> [Value] -> [(String, Value)] -> MEval Scope
-bindArgs a ps ks = get >>= \s -> lift (execStateT (ba a ps ks) (clear s))
-    where clear s = s {local = M.empty}
+bindArgs :: [ArgDec] -> [Value] -> [(String, Value)] -> MEval EvalSt
+bindArgs as ps ks = get >>= \st -> lift (execStateT (ba as ps ks) (clear st))
+    where clear (sc,db) = (sc {local = M.empty}, db)
 
 --Will fail when passed malformed arguments, validate with preprocessor
 ba :: [ArgDec] -> [Value] -> [(String, Value)] -> MEval ()
@@ -229,27 +238,27 @@ uminus = nar1 "Unary -" negate
 uplus = nar1 "Unary +" id 
 
 print' :: (String, ([ArgDec], MEval Value))
-print' = ("print",(args1, get >>= \s -> do 
+print' = ("print",(args1, getScope >>= \s -> do 
     case lookupInScope "a" s of 
         Just v -> lift $ print v
         otherwise -> fail "Unsupported print value"
     return VNull))
 
 nar1 :: String -> (Double -> Double) -> (String, ([ArgDec], MEval Value))
-nar1 n f = (n,(args1, get >>= \s -> 
+nar1 n f = (n,(args1, getScope >>= \s -> 
     case lookupInScope "a" s of
         Just (VInt a) -> return $ VInt $ round $ f $ fromIntegral a
         Just (VFloat a) -> return $ VFloat $ f a
         otherwise -> fail $ "Must provide numerical argument for " ++ n))
 
 nar2 :: String -> (Double -> Double -> Double) -> (String, ([ArgDec], MEval Value))
-nar2 n f = (n, (args2, get >>= \s -> do
+nar2 n f = (n, (args2, getScope >>= \s -> do
     a <- numericLit n $ lookupInScope "a" s 
     b <- numericLit n $ lookupInScope "b" s 
     return $ nap2 f a b))
 
 nbar2 :: String -> (Double -> Double -> Bool) -> (String, ([ArgDec], MEval Value))
-nbar2 n f = (n, (args2, get >>= \s -> do
+nbar2 n f = (n, (args2, getScope >>= \s -> do
     a <- numericLit n $ lookupInScope "a" s 
     b <- numericLit n $ lookupInScope "b" s 
     return $ b2c $ nbap2 f a b))
@@ -258,19 +267,19 @@ b2c True = VCons "True" []
 b2c False = VCons "False" []
 
 niar2 :: String -> (Double -> Double -> Integer) -> (String, ([ArgDec], MEval Value))
-niar2 n f = (n, (args2, get >>= \s -> do
+niar2 n f = (n, (args2, getScope >>= \s -> do
     a <- numericLit n $ lookupInScope "a" s 
     b <- numericLit n $ lookupInScope "b" s 
     return $ VInt $ niap2 f a b))
 
 bar2 :: String -> (Bool -> Bool -> Bool) -> (String, ([ArgDec], MEval Value))
-bar2 n f = (n, (args2, get >>= \s -> do
+bar2 n f = (n, (args2, getScope >>= \s -> do
     a <- boolLit n $ lookupInScope "a" s 
     b <- boolLit n $ lookupInScope "b" s 
     return $ b2c $ f a b))
 
 bar1 :: String -> (Bool -> Bool) -> (String, ([ArgDec], MEval Value))
-bar1 n f = (n, (args1, get >>= \s -> do
+bar1 n f = (n, (args1, getScope >>= \s -> do
     a <- boolLit n $ lookupInScope "a" s 
     return $ b2c $ f a))
 
