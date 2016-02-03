@@ -25,4 +25,22 @@ constraint = lexeme $ try valCons <|> funCons
 funCons = FunCons <$> angles constraint <*> opSufCons
 
 -- parses a non functional constraint ie T1<t2,T3> or t
-valCons = ValCons <$> aName <*> (fromMaybe [] <$> optional (angles constraint))
+valCons = valCons' aName
+
+valCons' p = ValCons <$> p <*>  consParams
+
+consParams = fromMaybe [] <$> optional (angles constraint)
+
+dataCons = valCons' uName
+
+classCons = consOrList lName
+
+instCons = consOrList uName
+
+consOrList p = do 
+    c <- optional p
+    case c of
+        Just n -> ValCons <$> return n <*> consParams
+        Nothing -> ValCons <$> return "" <*> angles constraint
+
+

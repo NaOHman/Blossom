@@ -26,25 +26,20 @@ data Constraint where
 
 data Data = Data
     { dpos :: SourcePos
-    , dName :: DecCons
+    , dName :: Constraint
     , constructors :: [(Id, [ArgDec])]
-    } deriving Show
-
-data DecCons = DecCons 
-    { decName :: Id
-    , dParams :: [Constraint]
     } deriving Show
 
 data Class = Class
     { cpos :: SourcePos
-    , cVar :: DecCons
+    , cVar :: Constraint
     , cname :: Id 
     , cstubs :: [(Id, [ArgDec], Constraint)]
     } deriving Show
 
 data Instance = Instance 
     { ipos :: SourcePos
-    , icons :: DecCons
+    , icons :: Constraint
     , instncOf :: Id
     , ifuns :: [Expr]
     } deriving Show
@@ -65,7 +60,7 @@ data Expr = Expr SourcePos Expr'
 
 data Expr' where
     ELit    :: Literal -> Expr'
-    EVar    :: Id -> Expr'
+    EVar    :: [Id] -> Expr'
     ELambda :: [ArgDec] -> Expr -> Expr'
     EFCall  :: Id -> [Arg] -> Expr'
     EFix    :: Id -> [ArgDec] -> Expr -> Expr'
@@ -113,6 +108,7 @@ data Literal' where
     {-LDict   :: [(Expr,Expr)]  -> Literal'-}
     {-LSet    :: [Expr] -> Literal'-}
     LCons   :: Id -> [Expr] -> Literal'
+    LType   :: Id -> Literal'
     LNull   :: Literal'
     deriving Show
 

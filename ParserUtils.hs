@@ -22,6 +22,8 @@ type MyParser a = StateT Int (Parsec String) a
 symbol :: String -> MyParser String
 symbol = L.symbol sc 
 
+gp = getPosition
+
 lexeme :: MyParser a -> MyParser a
 lexeme = L.lexeme sc
 
@@ -43,7 +45,7 @@ blockCmnt = L.skipBlockComment commentStart commentEnd
 nonIndented = L.nonIndented indentSC
 {-indentBlock = L.indentBlock indentSC-}
 
-myReserves = ["if", "then", "else", "elif", "is", "while", "curry", "send", "send_wait", "MailBox", "fun", "when", "where", "because", "given", "and", "or", "not", "True", "False", "case"]
+myReserves = ["if", "then", "else", "elif", "is", "while", "curry", "send", "send_wait", "MailBox", "fun", "when", "where", "because", "given", "and", "or", "not", "True", "False", "case", "type"]
 
 is' = rword "is"
 because' = rword "because"
@@ -55,6 +57,7 @@ when' = rword "when"
 where_ = rword "where"
 data_ = rword "data"
 case_ = rword "case"
+type_ = rword ".type"
 of_ = rword "of"
 arrow' = symbol "->"
 equals' = symbol "="
@@ -76,11 +79,15 @@ csl p = between (symbol "(") (symbol ")") (sepBy p comma')
 
 angles p = between (symbol "<") (symbol ">") (sepBy p comma')
 
+lStr = rstring lowerChar
+uStr = rstring upperChar
+
 rword w = string w *> notFollowedBy alphaNumChar *> sc
-identifier firstCharParser = lexeme (p >>= rwcheck)
-    where p         = (:) <$> firstCharParser <*> many nameChars
+identifier = lexeme . rstring
+rstring firstCharParser = p >>= rwcheck
+    where p= (:) <$> firstCharParser <*> many nameChars
           rwcheck x = if x `elem` myReserves
-                      then fail $ "You can't use " ++ show x ++ " It's all mine"
+                      then fail $ x ++ " is a reserved word"
                       else return x
 
 nameChars = alphaNumChar <|> char '_'
