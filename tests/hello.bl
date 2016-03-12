@@ -1,0 +1,12 @@
+data Tree<a> where 
+    Empty
+    Node(a,Tree<a>,Tree<a>)
+
+fun square(x) -> x * x
+
+fun main() ->
+    x = 5
+    print(square(x))
+    print("Hello World!")
+    print("The factorial of 5 is:")
+    print(fac(x))

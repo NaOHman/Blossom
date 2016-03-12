@@ -1,0 +1,61 @@
+data List<a> where
+    Cons(head : a, tail : List<a>)
+    Nil()
+
+data SuperClass where
+    Reserved:
+        .supername : String
+        .
+    
+data Duck where
+    .quack : <> -> Null
+    .name : String
+    .hungry : Bool
+
+<a,b> is NatTrans when
+    trans(a):b
+    trans(b):a
+
+<a,String> is NatTrans because
+    fun trans(x:a) -> show(x)
+    fun trans(x:String) -> read()
+
+f<a> is Foldable when
+    fold(<a,b>:b, f<a>, b) : b
+    
+m<a> is Mappable when
+    map(<a,b>:b, m<a>):m<b>
+
+List is Mappable because
+    fun map(fn, list) -> case list of
+        [] -> []
+        _ -> fn(list.head) :- map(fn, list.tail)
+
+List is Foldable because
+    fun fold(fn, lst, acc) -> case lst of
+        Nil -> acc
+        Cons(x,xs) -> fold(fn,xs,fn(x, acc))
+
+fun fac(x:Int) -> case x of
+    1 -> 1
+    _ -> x * fac(x - 1)
+
+fun id(x) -> 
+    x
+
+fun add(lst) -> 
+    fold(lst, 0)
+
+fun multiply(lst) -> 
+    fold(lst, 1)
+
+fun square(x) -> 
+    x * x
+
+fun main() ->
+    x = 4
+    id(x)
+    print(square(x))
+    print("Hello World!")
+    print("The factorial of 4 is:")
+    print(fac(x))
