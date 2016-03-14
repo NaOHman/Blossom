@@ -135,6 +135,7 @@ kGen id k = foldl tAp' (TCons $ Tycon id (kAry k)) [0..k]
 
 a `func` b = TAp (TAp tArrow a) b
 tUnit = TCons (Tycon "()" Star)
+tNull = TCons (Tycon "Null" Star)
 tType = TCons (Tycon "Type" Star)
 tString = TAp tList tChar
 tChar = TCons (Tycon "Char" Star)

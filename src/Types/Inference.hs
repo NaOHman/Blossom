@@ -233,8 +233,4 @@ tiSeq ti ce as (bs:bss) = do
 {-tiArgs :: Infer [Arg] Type'-}
 {-tiArgs ce as args  = do (ps,ts) <- unzip <$> mapM argType args-}
                         {-return (concat ps, tProduct ts)-}
-                        
     {-where argType (Lex _ (PArg e)) = tiExpr ce as e-}
-
-
-

@@ -2,6 +2,7 @@ import Types.Inference
 import Types.Utils
 import Models.Expressions
 import qualified Data.Map as M
+import Data.List (intercalate)
 
 main = do 
           {-print $ runTI $ tiPat' defAs asPat-}
@@ -9,10 +10,13 @@ main = do
           {-print $ runTI $ tiPat' defAs pLit-}
           {-print $ runTI $ tiPat' defAs pVar-}
           {-print $ runTI $ tiPat' defAs pNil-}
-          print defAs
-          print $ defTI tiExpr' expr1
-          print $ defTI tiExpr' expr2
+          {-print defAs-}
+          prettyPrint $ defTI tiExpr' expr0
+          prettyPrint $ defTI tiExpr' expr1
 
+exId = Abs idPat (Var "x")
+idPat = prod [PVar "x"]
+expr0 = Ap 
 expr1 = Ap lambda aargs
     where aargs = Lit (prod [LChar 'a', LChar 'b', LChar 'c'])
           lambda = Abs p ex
@@ -44,8 +48,10 @@ pLit = PLit (LChar 'c')
 pVar = PVar "a"
 pNil = PNil
 
-defTI :: Infer e t -> e -> ([Pred], t)
-defTI inf e = runTI (inf defCE defAs e)
+defTI inf e = runTI $ do
+        (ps,t) <- inf defCE defAs e
+        s <- getSubst
+        return (apply s t)
 
 lst' = Tycon "List" (KFun Star Star) 
 listOf = TAp (TCons lst')
@@ -115,8 +121,18 @@ defaultAssumps = map toAsmp [
   ]
   where binary = [v, v] `pfunc` v
         b2Bool = [v ,v] `pfunc` tBool
-        unary  = [v] `pfunc` TGen 0
+        unary  = [v] `pfunc` v
         bbool = [tBool, tBool] `pfunc` tBool
         ubool = [tBool] `pfunc` tBool
         toAsmp (i,"",t) = i :>: quantify [v'] ([]:=> t)
         toAsmp (i,q,t)  = i :>: quantify [v'] ([IsIn q [v]] :=> t)
+
+prettyPrint = print . pretty
+pretty t@(TAp{}) = case bottom t [] of
+                           ("->", [t1,t2]) -> pretty t1 ++ "->" ++ pretty t2 
+                           (n,  ts) -> n ++ "<" ++ intercalate ","  (map pretty ts) ++ ">"
+    where bottom (TAp t1 t2) ts = bottom t1 (t2:ts)
+          bottom (TCons (Tycon i _)) ts = (i, ts)
+pretty (TCons (Tycon i _)) = i
+pretty (TVar (Tyvar i _)) = i
+pretty (TGen i) = "Gen" ++ show i
