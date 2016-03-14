@@ -18,12 +18,15 @@ main = do
     case parsed of
         Left err -> print err
         Right p@(Program as bs m d ce) -> do
-           print bs
-           let as' = tiProgram ce as bs
+           putStrLn "Hello"
+           {-print bs-}
+           mapM_ print (as ++ defaultAssumps)
+           let as' = tiProgram ce (as ++ defaultAssumps) bs
+           print as
            putStrLn "Success"
-            {-case preprocess s of-}
-                {-Left err -> print err-}
-                {-Right (ws,scp) -> do-}
+           {-case preprocess s of-}
+               {-Left err -> print err-}
+               {-Right (ws,scp) -> do-}
                     {-mapM_ print ws-}
                     {-runProg dbg scp-}
 
@@ -46,3 +49,35 @@ parseArgs (f:as) = (False, f, as)
     {-[>where getGbls = fromList . map f <]-}
           {-[>f (Expr _ (EFix n a e)) = (n, VLambda a e)<]-}
           {-[>f (Expr _ (ELet (DName n) (Expr _ (ELit l)))) = (n, lit2Val l)<]-}
+
+defaultAssumps :: [Assump]
+defaultAssumps = map toAsmp [
+   ("+UN",   "Num",        unary)
+  ,("-UN",   "Num",        unary)
+  ,("+",     "Num",        binary)
+  ,("-",     "Num",        binary)
+  ,("/",     "Fractional", binary)
+  ,("*",     "Num",        binary)
+  ,("//",    "Integral",   binary)
+  ,("%",     "Integral",   binary)
+  ,("<",     "Ord",        binary)
+  ,(">",     "Ord",        binary)
+  ,(">=",    "Ord",        binary)
+  ,("<=",    "Ord",        binary)
+  ,("==",    "Eq",         binary)
+  ,("and",   "",           bbool)
+  ,("or",    "",           bbool)
+  ,("xor",   "",           bbool)
+  ,("not",   "",           ubool)
+  ]
+  {-,("print", "",           mkFun [tString] unit)-}
+  where binary = mkFun' [v',v'] v'
+        unary  = mkFun' [v']   v'
+        bbool = tBool `func` tBool `func` tBool
+        ubool = tBool 
+        bool = Tycon "Bool" Star
+        unit = Tycon "()" Star
+        v' = TVar v
+        v  = Tyvar "a" Star
+        toAsmp (i,"",t) = i :>: quantify [v] ([]:=> t)
+        toAsmp (i,q,t)  = i :>: quantify [v] ([IsIn q [v']] :=> t)

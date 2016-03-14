@@ -25,7 +25,7 @@ lString = a2Cons <$> strChars
     where strChars = between (char '"') (char '"') (many posChar)
           posChar = lit2Expr <$> getPosition <*> (LChar <$> myChar)
 
-lit2Expr :: SourcePos -> Literal' -> Expr
+lit2Expr :: SourcePos -> Literal' -> PExpr
 lit2Expr p l = Lex p $ ELit $ Lex p l
 
 myChar = escapedChar <|> noneOf "'\"\\\n\t\r"
@@ -45,7 +45,7 @@ lFloat = LFloat <$> (try sufflt <|> flt)
           sufflt = fromIntegral <$> L.integer <* char 'f'
 
 -- TODO handle disambiguation e.g. List.Cons
-lCons :: BParser Expr -> BParser Literal'
+lCons :: BParser PExpr -> BParser Literal'
 lCons p = LCons <$> uName <*> ps
     where ps = try (lStruct "(" ")" p) <|> return []
 
@@ -78,7 +78,7 @@ lTuple p = parens $ do
 -- Parses a generic literal struct
 lStruct s e = between (symbol s) (symbol e) . (`sepBy` comma')
 
-a2Cons :: [Expr] -> Literal'
+a2Cons :: [PExpr] -> Literal'
 a2Cons = foldl cons nil 
     where cons l e@(Lex p _) = LCons "[cons]" [e, lit2Expr p l]
           nil = LCons "[nil]" []

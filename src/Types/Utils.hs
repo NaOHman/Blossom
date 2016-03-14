@@ -31,8 +31,7 @@ s1 @@ s2 = [(u, apply s1 t) | (u,t) <- s2] ++ s1
 
 merge :: Monad m => Subst -> Subst -> m Subst
 merge s1 s2 = if agree 
-                then return (s1 ++ s2) 
-                else fail "merge failed"
+                then return (s1 ++ s2) else fail "merge failed"
     where agree = all p (map fst s1 `intersect` map fst s2)
           p v = apply s1 (TVar v) == apply s2 (TVar v)
 
@@ -42,7 +41,7 @@ mgu (TVar u) t = varBind u t
 mgu t (TVar u) = varBind u t
 mgu (TCons t1) (TCons t2) 
     | t1 == t2 = return nullSubst
-mgu _ _ = fail "Types could not be unified"
+mgu a b = fail $  "Types could not be unified " ++ show a ++ ", "++ show b
 
 mguPred :: Monad m => Pred -> Pred -> m Subst
 mguPred = liftPred mgu
@@ -126,7 +125,7 @@ toScheme :: Type' -> Scheme
 toScheme t = Forall [] ([] :=> t)
 
 find :: Monad m => Id -> [Assump] -> m Scheme
-find i [] = fail "Unbound variable"
+find i [] = fail $ "Unbound variable " ++ show i
 find i ((i':>:sc) : as) | i == i' = return sc
                         | otherwise = find i as
 
@@ -135,7 +134,7 @@ kGen id k = foldl tAp' (TCons $ Tycon id (kAry k)) [0..k]
     where tAp' t i = TAp t (TGen i)
 
 a `func` b = TAp (TAp tArrow a) b
-tNull = TCons (Tycon "Null" Star)
+tUnit = TCons (Tycon "()" Star)
 tType = TCons (Tycon "Type" Star)
 tString = TAp tList tChar
 tChar = TCons (Tycon "Char" Star)

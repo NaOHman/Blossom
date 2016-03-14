@@ -40,5 +40,5 @@ data ClassDec' = ClassDec'
 data Instance' = Instance'
     { icons  :: Type
     , iclass :: Id -- Predicate?
-    , ifuns  :: [(Id,Expr)]
+    , ifuns  :: [(Id,PExpr)]
     } deriving Show

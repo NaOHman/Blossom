@@ -3,8 +3,10 @@ module Models.Expressions
     ( module Models.Core
     , module Models.Types
     , Lex (..)
-    , Expr' (..)
+    , PExpr (..)
+    , PExpr' (..)
     , Expr (..)
+    , Expr' (..)
     , Literal' (..)
     , Literal (..)
     , ArgDec' (..)
@@ -18,6 +20,8 @@ module Models.Expressions
     , Impl(..)
     , BindGroup(..)
     , Nameable(..)
+    , Prod(..)
+    , Cons(..)
     ) where
 
 import Models.Core
@@ -30,6 +34,8 @@ type Expl = (Id, Scheme, Expr)
 type Impl = (Id, Expr)
 type Alt = (Pat, Expr)
 type BindGroup = ([Expl], [Impl])
+
+type PExpr = Lex PExpr'
 type Expr = Lex Expr'
 type Literal = Lex Literal'
 type ArgDec = Lex ArgDec'
@@ -40,22 +46,35 @@ class Nameable a where
     nameOf :: a -> Id
 
 -- TODO remove ArgDec, change EAbs to 'EAbs Alt'
-data Expr' = ELit Literal
-           | EVar  Id
-           | EAbs  [ArgDec] Expr
-           | EAp   Expr [Arg]
-           | ELet  Id Expr
-           | ECase Expr [Alt]
-           | EAnnot Expr Type
-           | EUnit
+data PExpr' = ELit Literal
+            | ECons (Cons PExpr')
+            | EVar  Id
+            | EAbs  [ArgDec] PExpr
+            | EAp   PExpr [Arg]
+            | ELet  Id PExpr
+            | ECase PExpr [(Pat,PExpr)]
+            | EAnnot PExpr Type
+            | EUnit
+    deriving Show
+
+data Expr' = Lit Literal'
+           | Cns (Cons Expr')
+           | Var Id
+           | Let Id Expr Expr
+           | Ap Expr' Expr'
+           | Abs Pat' Expr'
+           | Case Expr [Alt] 
+    deriving Show
+
+data Cons a = Cons Id [a]
     deriving Show
 
 data Literal' = LChar Char
               | LInt    Integer
               | LFloat  Double
-              | LDict   [(Expr,Expr)]
-              | LSet    [Expr]
-              | LCons   Id [Expr] --constructors are functions too
+              | LCons   (Cons Literal')
+              {-| LDict   [(a,a)]-}
+              {-| LSet    [a]-}
               | LType   Id
               | LNull
     deriving Show
@@ -71,12 +90,32 @@ data ArgDec' = PDec Id (Maybe Type)
              | KDec Id Literal (Maybe Type)
     deriving Show
 
-data Arg' = PArg Expr | KArg Id Expr
+data Arg' = PArg PExpr | KArg Id PExpr
     deriving Show
 
 data Pat' = PCons Id [Pat']
           | PAs   Id Pat'
-          | PLit  Literal
+          | PLit  Literal'
           | PVar  Id
           | PNil
     deriving Show
+
+class Prod a where
+    prod :: [a] -> a
+
+instance Prod Pat' where 
+    prod as = PCons (prodName as) as
+
+instance Prod Expr' where 
+    prod as = foldl Ap (Var $ prodName as) as
+
+instance Prod Literal' where
+    prod as = LCons (Cons (prodName as) as)
+
+instance Prod Type' where 
+    prod ts = foldl TAp (TCons $ Tycon (prodName ts) ks) ts
+        where ks =  foldl KFun Star (replicate (length ts) Star)
+
+{-lProd as = LCons (prodName as) as-}
+prodName :: [a] -> String
+prodName ls = show (length ls) ++ "PROD"

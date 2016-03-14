@@ -29,7 +29,7 @@ tiProgram ce as bgs = runTI $  do
     (ps, as') <- tiSeq tiBindGroup ce as bgs
     s <- getSubst
     rs <- reduceCtx ce (apply s ps)
-    if null (ambiguities (tv (as'++as)) rs)
+    if null (ambiguities (tv (as'++ as)) rs)
         then return $ apply s as'
         else fail "ambiguous type"
         --TODO might not be the right way to handle ambiguities
@@ -75,7 +75,7 @@ type Infer e t = ClassEnv -> [Assump] -> e -> TI ([Pred], t)
 tiLit :: Literal -> TI ([Pred], Type')
 tiLit = tiLit' . unwrap
 
-tiLit' :: Literal' -> TI ([Pred], Type')
+tiLit' :: Literal'  -> TI ([Pred], Type')
 tiLit' (LChar _) = return ([], tChar)
 tiLit' (LInt _) = do v <- newTVar Star 
                      return([IsIn "Num" [v]], v)
@@ -86,8 +86,8 @@ tiLit' LNull       = return ([], tNull)
 
 {-tiLit (LCons i _) = getType i-}
 
-tiPat :: Pat -> TI ([Pred], [Assump], Type')
-tiPat (Lex pos t) = uniqVars t >>= tiPat'
+tiPat :: [Assump] -> Pat -> TI ([Pred], [Assump], Type')
+tiPat as (Lex pos t) = uniqVars t >>= tiPat' as
     where uniqVars p = if uniq' (varNames p)
                           then return p
                           else fail $ show pos ++ "Variable names in patterns must be unique"
@@ -98,53 +98,61 @@ tiPat (Lex pos t) = uniqVars t >>= tiPat'
           varNames (PCons i ps) = concatMap varNames ps
           varNames _ = []
 
-tiPat' (PAs i p) = do (ps, as, t) <- tiPat' p
-                      return (ps, (i:>:toScheme t) : as, t)
-tiPat' (PVar i) = do v <- newTVar Star
-                     return ([], [i:>:toScheme v], v)
-tiPat' PNil = do v <- newTVar Star
-                 return([],[],v)
-tiPat' (PLit l) = do (ps,t) <- tiLit l
-                     return (ps, [], t)
-{-tiPat' (PCons i ps) = do (ps, as, ts) <- tiPats ps-}
-                         {-t' <- newTVar Star-}
-                         {-sc <- getScheme i-}
-                         {-(qs :=> t) <- freshInst sc-}
-                         {-unify t (foldr func t' ts)-}
-                         {-return (ps ++ qs, as, t')-}
+tiPat' ass (PAs i p) = do (ps, as, t) <- tiPat' ass p
+                          return (ps, (i:>:toScheme t) : as, t)
+tiPat' ass (PVar i) = do v <- newTVar Star
+                         return ([], [i:>:toScheme v], v)
+tiPat' ass PNil = do v <- newTVar Star
+                     return([],[],v)
+tiPat' ass (PLit l) = do (ps,t) <- tiLit' l
+                         return (ps, [], t)
+tiPat' ass (PCons i ps) = do (ps, as, ts) <- tiPats ass ps
+                             t' <- newTVar Star
+                             sc <- find i ass
+                             (qs :=> t) <- freshInst sc
+                             unify t (foldr func t' ts)
+                             return (ps ++ qs, as, t')
 
-tiPats :: [Pat'] -> TI ([Pred], [Assump], [Type'])
-tiPats ps = do ppat <- mapM tiPat' ps
-               let ps = concat [ps' | (ps',_,_) <- ppat]
-                   as = concat [as' | (_,as',_) <- ppat]
-                   ts = [t | (_,_,t) <- ppat]
-               return (ps, as, ts)
+tiPats :: [Assump] -> [Pat'] -> TI ([Pred], [Assump], [Type'])
+tiPats ass ps = do ppat <- mapM (tiPat' ass)  ps
+                   let ps = concat [ps' | (ps',_,_) <- ppat]
+                       as = concat [as' | (_,as',_) <- ppat]
+                       ts = [t | (_,_,t) <- ppat]
+                   return (ps, as, ts)
 
 tiExpr :: Infer Expr Type'
 tiExpr ce as (Lex p e) = tiExpr' ce as e
 
-tiExpr' ce as (EVar i) = do
+tiExpr' ce as (Var i) =  lookupSc as i
+tiExpr' ce as (Cns (Cons i _)) = lookupSc as i
+tiExpr' ce as (Lit l) = tiLit' l
+tiExpr' ce as (Abs p e) = tiAlt' ce as (p,e)
+tiExpr' ce as (Ap f e) = do (ps, tf) <- tiExpr' ce as f
+                            (qs, te) <- tiExpr' ce as e 
+                            t <- newTVar Star
+                            unify (te `func` t) tf
+                            return (ps ++ qs, t) 
+
+{-tiExpr' ce as (Let bg ex') = do (ps, as') <- tiBindGroup ce as bg-}
+                                 {-(qs, t) <- tiExpr ce (as' ++ as) ex'-}
+                                 {-return (ps++qs, t)-}
+
+tiExpr' ce as (Case e bs) = fail "CASE"
+tiExpr' ce as (Let{}) = fail "LET"
+
+lookupSc as i = do
     sc <- find i as
     (ps :=> t) <- freshInst sc
     return (ps,t)
-tiExpr' ce as (ELit l) = tiLit l
-tiExpr' ce as (EAp e f) = do (ps, te) <- tiExpr ce as e
-                             (qs, tf) <- tiArgs ce as f 
-                             t <- newTVar Star
-                             unify (tf `func` t) te
-                             return (ps ++ qs, t) 
-
-{-tiExpr' ce as (ELet bg ex') = do (ps, as') <- tiBindGroup ce as bg-}
-                                 {-(qs, t) <- tiExpr ce (as' ++ as) ex'-}
-                                 {-return (ps++qs, t)-}
-tiExpr' ce as (EAbs argDecs ex) = undefined -- convert to let with fresh typeVar
-
-tiExpr' ce as (ECase e bs) = undefined
 
 tiAlt :: Infer Alt Type'
-tiAlt ce as (pat, e) = do (ps, as', tp) <- tiPat pat
+tiAlt ce as (pat, e) = do (ps, as', tp) <- tiPat as pat
                           (qs, te) <- tiExpr ce (as' ++ as) e
                           return (ps ++ qs, tp `func` te)
+
+tiAlt' ce as (pat, e) = do (ps, as', tp) <- tiPat' as pat
+                           (qs, te) <- tiExpr' ce (as' ++ as) e
+                           return (ps ++ qs, tp `func` te)
 
 tiAlts ce as alts t = do psts <- mapM (tiAlt ce as) alts
                          mapM_ (unify t .snd) psts
@@ -222,42 +230,11 @@ tiSeq ti ce as (bs:bss) = do
     (qs,as'') <- tiSeq ti ce (as'++as) bss
     return (ps++qs, as''++as')
                    
-tiArgs :: Infer [Arg] Type'
-tiArgs ce as args  = do (ps,ts) <- unzip <$> mapM argType args
-                        return (concat ps, tProduct ts)
+{-tiArgs :: Infer [Arg] Type'-}
+{-tiArgs ce as args  = do (ps,ts) <- unzip <$> mapM argType args-}
+                        {-return (concat ps, tProduct ts)-}
                         
-    where argType (Lex _ (PArg e)) = tiExpr ce as e
+    {-where argType (Lex _ (PArg e)) = tiExpr ce as e-}
 
-
-defaultAssumps = mapM toAsmp
-  [("+UN",   "Num",        unary)
-  ,("-UN",   "Num",        unary)
-  ,("+",     "Num",        binary)
-  ,("-",     "Num",        binary)
-  ,("/",     "Fractional", binary)
-  ,("*",     "Num",        binary)
-  ,("//",    "Integral",   binary)
-  ,("%",     "Integral",   binary)
-  ,("<",     "Ord",        binary)
-  ,(">",     "Ord",        binary)
-  ,(">=",    "Ord",        binary)
-  ,("<=",    "Ord",        binary)
-  ,("==",    "Eq",         binary)
-  ,("and",   "",           bbool)
-  ,("or",    "",           bbool)
-  ,("xor",   "",           bbool)
-  ,("not",   "",           ubool)
-  {-,("print", "",           mkFun [tString] unit)-}
-  ]
-  where binary v = mkFun' [TVar v,TVar v] (TVar v)
-        unary  v = mkFun' [TVar v] (TVar v)
-        bbool _ = tBool `func` tBool `func` tBool
-        ubool _ = tBool 
-        bool = Tycon "Bool" Star
-        unit = Tycon "()" Star
-        toAsmp (i,"",f) = do v <- newTVar 
-                             return $ i :>:  quantify [v] ([]:=> f v)
-        toAsmp (i,q,f) = do v <- newTVar
-                            return $ i :>:  quantify [v] ([IsIn q [TVar v]]:=> f v)
 
 

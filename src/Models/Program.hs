@@ -7,11 +7,9 @@ module Models.Program
     {-, FDec (..)-}
     {-, Value(..)-}
     , ClassEnv(..)
-    , Top'(..)
-    , Top(..)
     , DataMap(..)
     , Program(..)
-    , defPrg
+    {-, defPrg-}
     ) where
 
 import Models.Expressions as X
@@ -20,14 +18,6 @@ import Models.Data as X
 import Text.Megaparsec.Pos
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
-
-type Top = Lex Top'
-data Top' = Over Id Expr
-          | Dta  Data
-          | CDec ClassDec
-          | Let Id Expr
-          | Inst Instance
-    deriving Show
 
 data Program = Program
     { assumps  :: [Assump]
@@ -38,7 +28,7 @@ data Program = Program
     }
     deriving Show
 
-defPrg = Program [] [] EUnit [] M.empty
+{-defPrg = Program [] [] EUnit [] M.empty-}
 
 type ClassEnv = M.Map Id Class
 

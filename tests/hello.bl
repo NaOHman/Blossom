@@ -5,7 +5,7 @@ data Tree<a> where
 fun square(x) -> x * x
 
 fun main() ->
-    x = 5
+    "aa" + 1
     print(square(x))
     print("Hello World!")
     print("The factorial of 5 is:")

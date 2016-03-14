@@ -64,7 +64,7 @@ operators = [[uOp "+", uOp "-"],
          [uOp "not"],
          [bOp "and", bOp "or", bOp "xor"]]
 
-exblock ::  BParser Expr
+exblock ::  BParser PExpr
 exblock = liftM chain (iBlock expr) 
     where chain [e] = e
           chain (e:es) = foldl conChain e es
