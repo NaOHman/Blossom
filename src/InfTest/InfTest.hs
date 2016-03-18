@@ -5,32 +5,28 @@ import qualified Data.Map as M
 import Data.List (intercalate)
 
 main = do 
-          {-print $ runTI $ tiPat' defAs asPat-}
-          {-print $ runTI $ tiPat' defAs pCons-}
-          {-print $ runTI $ tiPat' defAs pLit-}
-          {-print $ runTI $ tiPat' defAs pVar-}
-          {-print $ runTI $ tiPat' defAs pNil-}
-          {-print defAs-}
-          prettyPrint $ defTI tiExpr' expr0
-          prettyPrint $ defTI tiExpr' expr1
+          print $ defTI tiExpr' expr0
+          print $ defTI tiExpr' expr1
+          print $ defTI tiExpr' expr2
 
+expr0 = Ap (Var "+") (prod $ map Lit [LInt 1, LInt 3])
 exId = Abs idPat (Var "x")
 idPat = prod [PVar "x"]
-expr0 = Ap 
-expr1 = Ap lambda aargs
-    where aargs = Lit (prod [LChar 'a', LChar 'b', LChar 'c'])
-          lambda = Abs p ex
-          p = prod [PVar "x", PVar "y", PVar "z"]
-          ex = Var "and" `app` [
-                 Var "==" `app` [
-                    Var "x",
-                    Var "y"],
-                 Var "==" `app` [
-                    Var "y",
-                    Var "z"]]
+pat1 = prod [PVar "x", PVar "y", PVar "z"]
+expr1 = Ap (Abs pat1 ex) aargs
+
+aargs = prod $ map Lit [LChar 'a', LChar 'b', LChar '4']
+
+ex = Var "and" `app` [
+     Var "==" `app` [
+        Var "x",
+        Var "y"],
+     Var "==" `app` [
+        Var "y",
+        Var "z"]]
 
 expr2 = Ap lambda aargs
-    where aargs = Lit (prod [LInt 3, LInt 5])
+    where aargs = prod $ map Lit [LInt 3, LInt 4]
           lambda = Abs p ex
           p = prod [PVar "x", PVar "y"]
           ex = Var "==" `app` [
@@ -51,8 +47,15 @@ pNil = PNil
 defTI inf e = runTI $ do
         (ps,t) <- inf defCE defAs e
         s <- getSubst
-        return (apply s t)
+        rs <- reduceCtx defCE (apply s ps)
+        {-if null (ambiguities (tv ))-}
+        {-let ps' = apply s ps-}
+        return (apply s t, rs, s)
 
+defSubs inf e = runTI $ do
+        (ps,t) <- inf defCE defAs e
+        getSubst
+        
 lst' = Tycon "List" (KFun Star Star) 
 listOf = TAp (TCons lst')
 
@@ -126,13 +129,3 @@ defaultAssumps = map toAsmp [
         ubool = [tBool] `pfunc` tBool
         toAsmp (i,"",t) = i :>: quantify [v'] ([]:=> t)
         toAsmp (i,q,t)  = i :>: quantify [v'] ([IsIn q [v]] :=> t)
-
-prettyPrint = print . pretty
-pretty t@(TAp{}) = case bottom t [] of
-                           ("->", [t1,t2]) -> pretty t1 ++ "->" ++ pretty t2 
-                           (n,  ts) -> n ++ "<" ++ intercalate ","  (map pretty ts) ++ ">"
-    where bottom (TAp t1 t2) ts = bottom t1 (t2:ts)
-          bottom (TCons (Tycon i _)) ts = (i, ts)
-pretty (TCons (Tycon i _)) = i
-pretty (TVar (Tyvar i _)) = i
-pretty (TGen i) = "Gen" ++ show i

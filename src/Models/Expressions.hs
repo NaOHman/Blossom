@@ -21,7 +21,6 @@ module Models.Expressions
     , BindGroup(..)
     , Nameable(..)
     , Prod(..)
-    , Cons(..)
     ) where
 
 import Models.Core
@@ -47,7 +46,7 @@ class Nameable a where
 
 -- TODO remove ArgDec, change EAbs to 'EAbs Alt'
 data PExpr' = ELit Literal
-            | ECons (Cons PExpr')
+            | ECons Id [PExpr']
             | EVar  Id
             | EAbs  [ArgDec] PExpr
             | EAp   PExpr [Arg]
@@ -58,7 +57,6 @@ data PExpr' = ELit Literal
     deriving Show
 
 data Expr' = Lit Literal'
-           | Cns (Cons Expr')
            | Var Id
            | Let Id Expr Expr
            | Ap Expr' Expr'
@@ -66,13 +64,10 @@ data Expr' = Lit Literal'
            | Case Expr [Alt] 
     deriving Show
 
-data Cons a = Cons Id [a]
-    deriving Show
-
 data Literal' = LChar Char
               | LInt    Integer
               | LFloat  Double
-              | LCons   (Cons Literal')
+              {-| LCons   Id [Literal']-}
               {-| LDict   [(a,a)]-}
               {-| LSet    [a]-}
               | LType   Id
@@ -109,12 +104,9 @@ instance Prod Pat' where
 instance Prod Expr' where 
     prod as = foldl Ap (Var $ prodName as) as
 
-instance Prod Literal' where
-    prod as = LCons (Cons (prodName as) as)
-
 instance Prod Type' where 
     prod ts = foldl TAp (TCons $ Tycon (prodName ts) ks) ts
-        where ks =  foldl KFun Star (replicate (length ts) Star)
+        where ks =  foldr KFun Star (replicate (length ts) Star)
 
 {-lProd as = LCons (prodName as) as-}
 prodName :: [a] -> String

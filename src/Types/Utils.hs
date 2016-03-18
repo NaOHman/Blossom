@@ -36,7 +36,10 @@ merge s1 s2 = if agree
           p v = apply s1 (TVar v) == apply s2 (TVar v)
 
 mgu :: Monad m => Type' -> Type' -> m Subst
-mgu (TAp l r) (TAp l' r') = (@@) <$> mgu l l' <*> mgu r r'
+mgu (TAp l r) (TAp l' r') = do
+    s1 <- mgu l l'
+    s2 <- mgu (apply s1 r) (apply s1 r') 
+    return (s2 @@ s1)
 mgu (TVar u) t = varBind u t
 mgu t (TVar u) = varBind u t
 mgu (TCons t1) (TCons t2) 
@@ -47,8 +50,8 @@ mguPred :: Monad m => Pred -> Pred -> m Subst
 mguPred = liftPred mgu
 
 varBind :: Monad m => Tyvar -> Type' -> m Subst
-varBind u t | t == TVar u = return nullSubst
-            | u `elem` tv t = fail "Occurs check failed"
+varBind u@(Tyvar i _) t | t == TVar u = return nullSubst
+            | u `elem` tv t = fail $ i ++ " Occurs check failed"
             | kind u /= kind t = fail "Kinds do not match"
             | otherwise = return (u +-> t)
 
@@ -57,7 +60,7 @@ match (TAp l r) (TAp l' r') = (match l l' >>= merge) =<< match r r'
 match (TVar u) t | kind u == kind t = return (u +-> t)
 match (TCons tc1) (TCons tc2)
     | tc1 == tc2 = return nullSubst
-match _ _ = fail "Types do not match"
+match t1 t2 = fail $ "Types do not match " ++ show t1 ++ ", " ++ show t2
 
 matchPred :: Monad m => Pred -> Pred -> m Subst
 matchPred = liftPred match
@@ -78,14 +81,17 @@ bySuper ce p@(IsIn i t) =
 
 byInst :: ClassEnv -> Pred -> Maybe [Pred]
 byInst ce p@(IsIn i t) = msum [tryInst it | it <- insts ce i]
-    where tryInst (ps:=>h) = mapM (apply' $ matchPred h p) ps
-          apply' s p = apply <$> s <*> Just p
+    where tryInst (ps:=>h) = do u <- matchPred h p
+                                Just (map (apply u) ps)
 
 --does a list of predicates imply this predicate?
 entail :: ClassEnv -> [Pred] -> Pred -> Bool
-entail ce ps p = entailSuper || entailInst
-    where entailSuper = any (p `elem`) (map (bySuper ce) ps)
-          entailInst = isJust (all (entail ce ps) <$> byInst ce p)
+entail ce ps p = scEntail ce ps p || case byInst ce p of
+                          Nothing -> False
+                          Just qs -> all (entail ce ps) qs
+
+scEntail :: ClassEnv -> [Pred] -> Pred -> Bool
+scEntail ce ps p = any (p `elem`) (map (bySuper ce) ps)
 
 --context reduction garbage
 isInHnf :: Pred -> Bool
@@ -95,7 +101,8 @@ isInHnf (IsIn _ ts) = all hnf ts
           hnf (TAp t _) = hnf t
 
 toHnfs :: Monad m => ClassEnv -> [Pred] -> m [Pred]
-toHnfs ce = liftM concat . mapM (toHnf ce)
+toHnfs ce ps = do pss <- mapM (toHnf ce) ps
+                  return (concat pss)
 
 toHnf :: Monad m => ClassEnv -> Pred -> m [Pred]
 toHnf ce p | isInHnf p = return [p]
@@ -113,7 +120,8 @@ simplify ce = loop []
 
 -- put a context into the simplest form
 reduceCtx :: Monad m => ClassEnv -> [Pred] -> m [Pred]
-reduceCtx ce = liftM (simplify ce) . toHnfs ce
+reduceCtx ce ps = do qs <- toHnfs ce ps
+                     return (simplify ce qs)
             
 quantify :: [Tyvar] -> Qual Type' -> Scheme
 quantify vs qt = Forall ks (apply s qt)

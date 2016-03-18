@@ -8,6 +8,7 @@ import Text.Megaparsec
 import Data.List (nub, union, intersect, partition, (\\))
 import Data.Maybe (fromMaybe, isJust)
 import Control.Monad (msum, liftM, ap, liftM2, foldM, zipWithM)
+import GHC.Exts
 import qualified Data.Map as M
 
 newtype TI a = TI (Subst -> Int -> (Subst, Int, a))
@@ -43,6 +44,9 @@ getSubst = TI (\s n -> (s,n,s))
 unify :: Type' -> Type' -> TI ()
 unify t1 t2 = do s <- getSubst
                  u <- mgu (apply s t1) (apply s t2)
+                 {-s <- extSubst u-}
+                 {-ss <- checkSubst-}
+                 {-return s-}
                  extSubst u
     where extSubst s' = TI (\s n -> (s'@@s, n, ()))
 
@@ -72,19 +76,45 @@ instance Instantiate Pred where
 
 type Infer e t = ClassEnv -> [Assump] -> e -> TI ([Pred], t)
 
+tiExpr :: Infer Expr Type'
+tiExpr ce as (Lex p e) = tiExpr' ce as e
+
+tiExpr' ce as (Var i) =  lookupSc as i
+tiExpr' ce as (Lit l) = tiLit' l
+tiExpr' ce as (Abs p e) = tiAlt' ce as (p,e)
+tiExpr' ce as (Ap e1 e2) = do 
+    (ps, t1) <- tiExpr' ce as e1
+    (qs, t2) <- tiExpr' ce as e2 
+    t <- newTVar Star
+    unify t1 (t2 `func` t)
+    return (ps ++ qs, t) 
+
+{-tiExpr' ce as (Let bg ex') = do (ps, as') <- tiBindGroup ce as bg-}
+                                 {-(qs, t) <- tiExpr ce (as' ++ as) ex'-}
+                                 {-return (ps++qs, t)-}
+
+tiExpr' ce as (Case e bs) = fail "CASE"
+tiExpr' ce as (Let{}) = fail "LET"
+
+tiExprs' ce as ts = do res <- mapM (tiExpr' ce as) ts
+                       let ps' = concat [ps | (ps,_) <- res]
+                           ts' = [ts | (_,ts) <- res]
+                       return (ps',ts')
+
+lookupSc as i = do
+    sc <- find i as
+    (ps :=> t) <- freshInst sc
+    return (ps,t)
+
 tiLit :: Literal -> TI ([Pred], Type')
 tiLit = tiLit' . unwrap
 
-tiLit' :: Literal'  -> TI ([Pred], Type')
-tiLit' (LChar _) = return ([], tChar)
-tiLit' (LInt _) = do v <- newTVar Star 
-                     return([IsIn "Num" [v]], v)
-tiLit' (LFloat _) = do v <- newTVar Star
-                       return([IsIn "Num" [v]], v) 
+tiLit' (LChar _)   = return ([], tChar)
+tiLit' (LInt _)    = return ([], tInt)
+tiLit' (LFloat _)  = return ([], tFloat)
 tiLit' (LType _)   = return ([], tType)
 tiLit' LNull       = return ([], tNull)
 
-{-tiLit (LCons i _) = getType i-}
 
 tiPat :: [Assump] -> Pat -> TI ([Pred], [Assump], Type')
 tiPat as (Lex pos t) = uniqVars t >>= tiPat' as
@@ -98,20 +128,26 @@ tiPat as (Lex pos t) = uniqVars t >>= tiPat' as
           varNames (PCons i ps) = concatMap varNames ps
           varNames _ = []
 
-tiPat' ass (PAs i p) = do (ps, as, t) <- tiPat' ass p
-                          return (ps, (i:>:toScheme t) : as, t)
-tiPat' ass (PVar i) = do v <- newTVar Star
-                         return ([], [i:>:toScheme v], v)
-tiPat' ass PNil = do v <- newTVar Star
-                     return([],[],v)
-tiPat' ass (PLit l) = do (ps,t) <- tiLit' l
-                         return (ps, [], t)
-tiPat' ass (PCons i ps) = do (ps, as, ts) <- tiPats ass ps
-                             t' <- newTVar Star
-                             sc <- find i ass
-                             (qs :=> t) <- freshInst sc
-                             unify t (foldr func t' ts)
-                             return (ps ++ qs, as, t')
+tiPat' as (PAs i p) = do 
+    (ps, as', t) <- tiPat' as p
+    return (ps, (i:>:toScheme t) : as', t)
+tiPat' _ (PVar i) = do 
+    v <- newTVar Star
+    return ([], [i:>:toScheme v], v)
+tiPat' _ PNil = do 
+    v <- newTVar Star
+    return([],[],v)
+tiPat' as (PLit l) = do 
+    (ps,t) <- tiLit' l
+    return (ps, [], t)
+tiPat' ass (PCons i pats) = do 
+    --TODO Arity check
+    sc <- find i ass
+    (ps, as, ts) <- tiPats ass pats
+    rt <- newTVar Star
+    (qs :=> scType) <- freshInst sc
+    unify scType (foldr func rt ts)
+    return (ps ++ qs, as, rt)
 
 tiPats :: [Assump] -> [Pat'] -> TI ([Pred], [Assump], [Type'])
 tiPats ass ps = do ppat <- mapM (tiPat' ass)  ps
@@ -119,31 +155,6 @@ tiPats ass ps = do ppat <- mapM (tiPat' ass)  ps
                        as = concat [as' | (_,as',_) <- ppat]
                        ts = [t | (_,_,t) <- ppat]
                    return (ps, as, ts)
-
-tiExpr :: Infer Expr Type'
-tiExpr ce as (Lex p e) = tiExpr' ce as e
-
-tiExpr' ce as (Var i) =  lookupSc as i
-tiExpr' ce as (Cns (Cons i _)) = lookupSc as i
-tiExpr' ce as (Lit l) = tiLit' l
-tiExpr' ce as (Abs p e) = tiAlt' ce as (p,e)
-tiExpr' ce as (Ap f e) = do (ps, tf) <- tiExpr' ce as f
-                            (qs, te) <- tiExpr' ce as e 
-                            t <- newTVar Star
-                            unify (te `func` t) tf
-                            return (ps ++ qs, t) 
-
-{-tiExpr' ce as (Let bg ex') = do (ps, as') <- tiBindGroup ce as bg-}
-                                 {-(qs, t) <- tiExpr ce (as' ++ as) ex'-}
-                                 {-return (ps++qs, t)-}
-
-tiExpr' ce as (Case e bs) = fail "CASE"
-tiExpr' ce as (Let{}) = fail "LET"
-
-lookupSc as i = do
-    sc <- find i as
-    (ps :=> t) <- freshInst sc
-    return (ps,t)
 
 tiAlt :: Infer Alt Type'
 tiAlt ce as (pat, e) = do (ps, as', tp) <- tiPat as pat

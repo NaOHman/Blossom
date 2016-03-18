@@ -18,10 +18,11 @@ module Models.Types
     ) where
 
 import Models.Core
-import Data.List (nub, union)
+import Data.List (nub, union,intercalate)
 import Data.Maybe (fromMaybe)
 
 type Subst = [(Tyvar, Type')]
+
 type Type = Lex Type'
 
 data Type' = TVar Tyvar 
@@ -29,13 +30,13 @@ data Type' = TVar Tyvar
           | TCons Tycon
           | TAp Type' Type'
           | TGen Int
-    deriving (Eq, Show)
+    deriving Eq
 
 data Kind = Star | KFun Kind Kind
-    deriving (Eq, Show)
+    deriving Eq
 
 data Tyvar = Tyvar Id Kind
-    deriving (Eq, Show)
+    deriving Eq
 
 data Tycon = Tycon Id Kind
     deriving (Eq, Show)
@@ -110,3 +111,33 @@ instance HasKind Type' where
     kind (TCons tc) = kind tc
     kind (TAp t _)  = case kind t of
                            (KFun _ k) -> k
+
+instance Ord Tyvar where
+    (Tyvar v1 k1) <= (Tyvar v2 k2) 
+        | v1 == v2 = k1 <= k2
+        | otherwise = v1 <= v2
+
+instance Ord Kind where
+    Star <= Star = True
+    (KFun _ _ ) <= Star = True
+    Star <= (KFun _ _ ) = False
+    (KFun _ k1) <= (KFun _ k2) = k1 >= k2
+
+instance Show Kind where 
+    show Star = "*"
+    show (KFun k1 k2) = show k1 ++ " -> " ++ show k2
+instance Show Type' where
+    show (TAp (TAp (TCons (Tycon "->" _)) t1) t2) = 
+        show t1 ++ " -> " ++ show t2
+    show (TAp t1 t2) = let (i,ts) = bottom t1 [t2]
+                       in i ++ "<" ++ intercalate "," (map show ts) ++ ">"
+
+    show (TCons (Tycon i _ )) = i
+    show (TVar (Tyvar i _)) = i
+    show (TGen i) = "G" ++ show i
+
+instance Show Tyvar where
+    show (Tyvar v k) = v ++ "(" ++ show k ++ ")"
+
+bottom (TAp t1 t2) ts = bottom t1 (t2:ts)
+bottom t ts = (show t, ts)
