@@ -19,12 +19,14 @@ import Text.Megaparsec.Pos
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 
+type Binding = (Id, Expr, Scheme)
+type Implementation = (Id, Scheme, [Binding])
+
 data Program = Program
-    { assumps  :: [Assump]
-    , bindings :: [BindGroup]
-    , mainF    :: Expr'
-    , dataTs   :: [Id]
-    , cEnv     :: ClassEnv
+    { bnds :: [Binding]
+    , impls :: [Implementation]
+    , dtaDs :: [Data']
+    , bhvr  :: ClassEnv
     }
     deriving Show
 
@@ -52,11 +54,6 @@ defClasses = M.fromList
     {-, constr :: M.Map String (M.Map String Int)-}
     {-} -}
  
-{-data FArgs = FArgs-}
-    {-{ pArg :: [(Id, Type)]-}
-    {-, kArg :: [(Id, Literal, Type)]-}
-    {-}-}
-
 data DataMap = DataMap 
     { dta :: M.Map Id Type
     , cnstrs :: M.Map Id [Type]
@@ -64,9 +61,3 @@ data DataMap = DataMap
     }
  
 defDMap = DataMap M.empty M.empty S.empty
-{-data FDec = FDec-}
-    {-{ fpos :: SourcePos-}
-    {-, fName :: Maybe String-}
-    {-, args :: [ArgDec]-}
-    {-, returnType :: Type-}
-    {-} deriving Show-}

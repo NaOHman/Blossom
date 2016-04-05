@@ -22,12 +22,23 @@ parseBlossom = re ([],[],[],[])
                           Just _ -> return prg
                           otherwise -> go prg
 
-parseTop :: BParser Top
-parseTop (es,is,cs,ds) = withPos $ tryList [over, dataDec, tlet, insDec, classDec]
+{-parseTop :: BParser Top-}
+{-parseTop (es,is,cs,ds) = withPos $ tryList [over, dataDec, tlet, insDec, classDec]-}
 
-topExpr = withPos $ eLet <|> (ELet <$> lname <*> eAbs)
+{-topExpr = withPos $ eLet <|> (ELet <$> lname <*> eAbs)-}
 
-over = Over <$> funName <*> eAbs
+gVar = do 
+    name <- uName
+    equals' 
+    e <- expr
+    return (name, e)
+  
+
+
+fDec = do
+    f <- funName 
+    e <- eAbs
+    return (f, e)
 
 
 dataDec  = Dta <$> withPos dataDec'
