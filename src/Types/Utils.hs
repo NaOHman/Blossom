@@ -22,7 +22,7 @@ enumId n = "..v" ++ show n
 nullSubst :: Subst
 nullSubst = []
 
-(+->) :: Tyvar -> Type' -> Subst
+(+->) :: Tyvar -> Type -> Subst
 u +-> t = [(u,t)]
 
 infixr 4 @@
@@ -35,7 +35,7 @@ merge s1 s2 = if agree
     where agree = all p (map fst s1 `intersect` map fst s2)
           p v = apply s1 (TVar v) == apply s2 (TVar v)
 
-mgu :: Monad m => Type' -> Type' -> m Subst
+mgu :: Monad m => Type -> Type -> m Subst
 mgu (TAp l r) (TAp l' r') = do
     s1 <- mgu l l'
     s2 <- mgu (apply s1 r) (apply s1 r') 
@@ -49,13 +49,13 @@ mgu a b = fail $  "Types could not be unified " ++ show a ++ ", "++ show b
 mguPred :: Monad m => Pred -> Pred -> m Subst
 mguPred = liftPred mgu
 
-varBind :: Monad m => Tyvar -> Type' -> m Subst
+varBind :: Monad m => Tyvar -> Type -> m Subst
 varBind u@(Tyvar i _) t | t == TVar u = return nullSubst
             | u `elem` tv t = fail $ i ++ " Occurs check failed"
             | kind u /= kind t = fail "Kinds do not match"
             | otherwise = return (u +-> t)
 
-match :: Monad m => Type' -> Type' -> m Subst
+match :: Monad m => Type -> Type -> m Subst
 match (TAp l r) (TAp l' r') = (match l l' >>= merge) =<< match r r'
 match (TVar u) t | kind u == kind t = return (u +-> t)
 match (TCons tc1) (TCons tc2)
@@ -65,7 +65,7 @@ match t1 t2 = fail $ "Types do not match " ++ show t1 ++ ", " ++ show t2
 matchPred :: Monad m => Pred -> Pred -> m Subst
 matchPred = liftPred match
 
-liftPred :: Monad m => (Type' -> Type' -> m Subst) -> Pred -> Pred -> m Subst
+liftPred :: Monad m => (Type -> Type -> m Subst) -> Pred -> Pred -> m Subst
 liftPred m (IsIn i ts) (IsIn i' ts')
     | i == i' = subUnion <$> foldFail ts ts'
     | otherwise = fail "Classes Differ"
@@ -123,13 +123,16 @@ reduceCtx :: Monad m => ClassEnv -> [Pred] -> m [Pred]
 reduceCtx ce ps = do qs <- toHnfs ce ps
                      return (simplify ce qs)
             
-quantify :: [Tyvar] -> Qual Type' -> Scheme
+quantQual :: [Pred] -> Type -> Scheme
+quantQual ps t = quantify (tv t) (ps :=> t)
+
+quantify :: [Tyvar] -> Qual Type -> Scheme
 quantify vs qt = Forall ks (apply s qt)
     where vs' = [v | v <- tv qt , v `elem` vs]
           ks = map kind vs'
           s = zip vs' (map TGen [0..])
 
-toScheme :: Type' -> Scheme
+toScheme :: Type -> Scheme
 toScheme t = Forall [] ([] :=> t)
 
 find :: Monad m => Id -> [Assump] -> m Scheme
@@ -137,7 +140,7 @@ find i [] = fail $ "Unbound variable " ++ show i
 find i ((i':>:sc) : as) | i == i' = return sc
                         | otherwise = find i as
 
-kGen :: Id -> Int -> Type'
+kGen :: Id -> Int -> Type
 kGen id k = foldl tAp' (TCons $ Tycon id (kAry k)) [0..k]
     where tAp' t i = TAp t (TGen i)
 
@@ -154,16 +157,15 @@ tList = TCons (Tycon "[]" (KFun Star Star))
 tArrow = TCons (Tycon "->" (KFun Star (KFun Star Star)))
 tcons n k = TCons (Tycon n k)
 
-tProduct :: [Type'] -> Type'
+tProduct :: [Type] -> Type
 tProduct ps = foldl TAp (TCons $ Tycon name (kAry len)) ps
     where name = show len ++ "PROD"
           len = length ps
 
-assume :: [Tyvar] -> Id -> Type' -> Assump
+assume :: [Tyvar] -> Id -> Type -> Assump
 assume tv id t = id :>: quantify tv ([] :=> t)
 
-mkFun ts t = tProduct (map unwrap ts) `func` t
-mkFun' ts t = tProduct ts `func` t
+mkFun ts t = tProduct ts `func` t
 
 kAry 0 = Star
 kAry n = KFun Star (kAry (n-1))

@@ -2,13 +2,14 @@
 
 module Models.Data 
     ( module Models.Core
+    , Stub(..)
+    , Binding(..)
     , Data(..)
-    , Data'(..)
-    , dname
-    , ClassDec(..)
-    , ClassDec'(..)
-    , Instance(..)
-    , Instance'(..)
+    , Behavior(..)
+    , Implementation(..)
+    {-, Instance'(..)-}
+    {-, ClassDec'(..)-}
+    {-, Data'(..)-}
     )where
 
 import Models.Expressions
@@ -16,29 +17,15 @@ import Models.Core
 import Models.Types
 import Text.Megaparsec.Pos
 
-type Instance = Lex Instance'
-type ClassDec = Lex ClassDec'
-type Data = Lex Data'
+type Stub = (Id, Scheme)
+type Binding = (Id, PExpr, Scheme)
 
-data Data' = Data'
-    { dCons :: Type
-    , constructors :: [(Id, Maybe Type')]
-    , fields :: [(Id, Type)]
-    } deriving Show
+data Data = ADT Scheme [Stub]
+          | Rec Scheme (Maybe Type) [Stub]
+    deriving Show
 
-dname (Data' (Lex _ t) _ _) = tname t
-tname (TCons (Tycon n _)) = n
-tname (TVar (Tyvar n _)) = n
-tname (TAp t _) = tname t
+data Behavior = Bhvr Scheme Id [Stub]
+    deriving Show
 
-data ClassDec' = ClassDec'
-    { cVar :: Type
-    , cname :: Id 
-    , cstubs :: [(Id, Type)]
-    } deriving Show
-
-data Instance' = Instance'
-    { icons  :: Type
-    , iclass :: Id -- Predicate?
-    , ifuns  :: [(Id,PExpr)]
-    } deriving Show
+data Implementation = Imp Scheme Id [Binding]
+    deriving Show

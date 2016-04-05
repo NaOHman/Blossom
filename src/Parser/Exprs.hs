@@ -14,48 +14,34 @@ expr = makeExprParser term operators <?> "expression"
 
 term = tryList [eCase, eAp, eLet, eLit, eVar, parens expr]
 
-eLit = withPos $ ELit <$> literal
+eLit = ELit <$> literal
 
-eVar = withPos $ EVar <$> lName
+eVar = EVar <$> lName
 
-eAbs = withPos $ EAbs <$> argArrow <*> exblock
+eAbs = EAbs <$> argArrow <*> exblock
 
-eAp = withPos $ namedFCall <|> subRef
-    where subRef = do ex@(Lex p _) <- eVar
+eCons = ECons <$> uName <*> (try parenExprs <|> return []) 
+eLet =  do p <- pat <* equals'
+           ex <- expr
+           return $ ELet [(p, ex)] EUnit
+
+eAp = regCall <|> subRef
+    where subRef = do ex <- expr
                       field <- char '.' *> eVar
-                      return $ EAp field [parg ex]
-          namedFCall = EAp <$> eVar <*> parenCsl args
-          args = tryList [withPos kArg, withPos pArg]
-          pArg = PArg <$> expr
-          kArg = KArg <$> (lName <* equals') <*> expr
+                      return $ EAp field [ex]
+          regCall = EAp <$> expr <*> parenExprs
 
-eLet = withPos $ ELet <$> (lName <* equals') <*> nil
-    where nil = withPos (return EUnit) 
-          varName = toBg <$> getPosition <*> lName <*> expr 
-          toBg p i e = ([], [(i, [(Lex p (PVar i), e)])])
-    --error if found by preprocessor
-
-eCase = withPos $ letCase <|> blockCase
-    where letCase = do 
-            pt <- pat
-            equals'
-            ex <- expr
-            return $ ECase ex [(pt, bindgroup pt ex)]
-          bindgroup = undefined
-          blockCase = ECase <$> header <*> iBlock aCase
-          header = case_ *> expr <* of_
-          aCase = (,) <$> (pat <* arrow') <*> exblock 
+eCase = ECase <$> header <*> iBlock branch
+    where header = case_ *> expr <* of_
+          branch = (,) <$> (pat <* arrow') <*> exblock 
    
-
-pat = withPos pat'
-pat' =  try (PCons <$> uName <*> (try (csl pat') <|> return []))
-    <|> try (PAs   <$> (lName <* char '#') <*> pat')
-    <|> try (PLit  <$> literal')
+pat  =  try (PCons <$> uName <*> (try (csl pat) <|> return []))
+    <|> try (PAs   <$> (lName <* char '#') <*> pat)
+    <|> try (PLit  <$> literal)
     <|> try (PVar  <$> lName)
     <|> try (symbol "_" >> return PNil)
 
 {-cTimeLit = literal (withPos (ELit <$> cTimeLit))-}
-
 
 operators = [[uOp "+", uOp "-"],
          [bOp "*", bOp "/", bOp "//", bOp "%"],
@@ -68,25 +54,18 @@ exblock ::  BParser PExpr
 exblock = liftM chain (iBlock expr) 
     where chain [e] = e
           chain (e:es) = foldl conChain e es
-          conChain (Lex p (ELet bg _)) e2 = 
-                Lex p $ ELet bg e2
-          conChain e1@(Lex p _) e2 = seq' p e1 e2
-          seq' p e1 e2 = Lex p $ EAp (Lex p $ EVar "!seq") 
-                            [parg e1, parg e2]
+          conChain (ELet bg _) e2 = ELet bg e2
+          conChain e1 e2 = EAp (EVar "!seq") [e1, e2]
 
-uOp s = Prefix (try (do
-    p <- getPosition <* rword s
-    return (\e -> opAp p (s++"UN") [parg e])))
+uOp s = Prefix $ try $
+    rword s *> return (\e -> opAp (s++"UN") [e])
 
-bOp s = InfixL (try (do
-    p <- getPosition <* rword s
-    return $ \e1 e2 -> opAp p s [parg e1, parg e2]))
+bOp s = InfixL $ try $
+    rword s *> return (\e1 e2 -> opAp s [e1, e2])
 
-opAp p s as = Lex p $ EAp (Lex p $ EVar s) as
+opAp s = EAp (EVar s)
 
-parg (Lex p e) = Lex p $ PArg (Lex p e)
+argArrow = csl arg <* arrow'
+    where arg = (,) <$> lName <*> opSufCons
 
-argArrow = csl argDec <* arrow'
-    where argDec = withPos $ try kwdec <|> try pdec
-          pdec = PDec <$> lName <*> opSufCons
-          kwdec = KDec <$> lName <*> (equals' *> literal) <*> opSufCons
+parenExprs = parenCsl expr

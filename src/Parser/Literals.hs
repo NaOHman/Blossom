@@ -8,16 +8,15 @@ import Text.Megaparsec
 import qualified Text.Megaparsec.Lexer as L
 
 --------------------- Literal Parsers ---------------------------------
-literal = withPos literal'
-literal' = lexeme $ tryList [lFloat,  lInt, lType, lChar]
+literal = lexeme $ tryList [lFloat, lInt, lChar]
     {-[lFloat, lBool, lInt, lArray p, lTuple p, -}
       {-lType, lChar, lString]-}
 
 -- Parses a Character literal
-lType :: BParser Literal'
-lType = LType <$> (uStr <* rword ".type")
+{-lType :: BParser Literal-}
+{-lType = LType <$> (uStr <* rword ".type")-}
 
-lChar :: BParser Literal'
+lChar :: BParser Literal
 lChar = LChar <$> between (char '"') (char '"') myChar
 
 -- Parses a String literal
@@ -25,9 +24,6 @@ lChar = LChar <$> between (char '"') (char '"') myChar
 {-lString = a2Cons <$> strChars-}
     {-where strChars = between (char '"') (char '"') (many posChar)-}
           {-posChar = lit2Expr <$> getPosition <*> (LChar <$> myChar)-}
-
-lit2Expr :: SourcePos -> Literal' -> PExpr
-lit2Expr p l = Lex p $ ELit $ Lex p l
 
 myChar = escapedChar <|> noneOf "'\"\\\n\t\r"
 
@@ -55,7 +51,7 @@ lFloat = LFloat <$> (try sufflt <|> flt)
 
 -- Parses a set literal, empty brackets are presumed to be Dicts
 {-lSet p = lset $ lStruct "{" "}" p-}
-lSet = undefined
+{-lSet = undefined-}
 
 {-lBool :: BParser Literal'-}
 {-lBool = true <|> false-}
@@ -64,10 +60,10 @@ lSet = undefined
 
 -- Parses a Dict literal
 {-lDict = ldict . lStruct "{" "}" . dictPair-}
-lDict = undefined
+{-lDict = undefined-}
 
 -- Parses a Dictionary keyword pair
-dictPair p = (,) <$> (p <* colon') <*> p
+{-dictPair p = (,) <$> (p <* colon') <*> p-}
 
 -- Parses a Tuple literal 
 {-lTuple p = parens $ do -}

@@ -42,10 +42,11 @@ blockCmnt = L.skipBlockComment commentStart commentEnd
 nonIndented = L.nonIndented indentSC
 {-indentBlock = L.indentBlock indentSC-}
 
-myReserves = ["if", "then", "else", "elif", "is", "while", "curry", "send", "send_wait", "MailBox", "fun", "when", "where", "because", "given", "and", "or", "not", "True", "False", "case", "type"]
+myReserves = ["if", "then", "else", "elif", "is", "while", "curry", "send", "send_wait", "MailBox", "fun", "when", "where", "because", "given", "and", "or", "not", "True", "False", "case", "type", "inherits"]
 
 is' = rword "is"
 because' = rword "because"
+inherits = rword "because"
 if_ = rword "if"
 elif = rword "elif"
 then_ = rword "then"

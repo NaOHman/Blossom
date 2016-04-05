@@ -19,13 +19,10 @@ import Text.Megaparsec.Pos
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 
-type Binding = (Id, Expr, Scheme)
-type Implementation = (Id, Scheme, [Binding])
-
 data Program = Program
-    { bnds :: [Binding]
+    { bnds  :: [Binding]
     , impls :: [Implementation]
-    , dtaDs :: [Data']
+    , dtaDs :: [Data]
     , bhvr  :: ClassEnv
     }
     deriving Show

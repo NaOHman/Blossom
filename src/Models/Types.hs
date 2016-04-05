@@ -2,7 +2,6 @@ module Models.Types
     ( module Models.Core
     , Subst
     , Kind(..)
-    , Type'(..)
     , Type(..)
     , Tyvar(..)
     , Tycon(..)
@@ -10,25 +9,24 @@ module Models.Types
     , Pred(..)
     , Scheme(..)
     , Assump(..)
-    {-, ClassEnv(..)-}
     , Class(..)
     , Inst(..)
     , HasKind(..)
     , Types(..)
+    {-, ClassEnv(..)-}
+    {-, Type'(..)-}
     ) where
 
 import Models.Core
 import Data.List (nub, union,intercalate)
 import Data.Maybe (fromMaybe)
 
-type Subst = [(Tyvar, Type')]
+type Subst = [(Tyvar, Type)]
 
-type Type = Lex Type'
-
-data Type' = TVar Tyvar 
-          | TFun [Type'] Type'
+data Type = TVar Tyvar 
+          | TFun [Type] Type
           | TCons Tycon
-          | TAp Type' Type'
+          | TAp Type Type
           | TGen Int
     deriving Eq
 
@@ -44,10 +42,10 @@ data Tycon = Tycon Id Kind
 data Qual t = [Pred] :=> t
     deriving (Eq, Show)
 
-data Pred = IsIn Id [Type']
+data Pred = IsIn Id [Type]
     deriving (Eq, Show)
 
-data Scheme = Forall [Kind] (Qual Type')
+data Scheme = Forall [Kind] (Qual Type)
     deriving (Eq, Show)
 
 data Assump = Id :>: Scheme
@@ -64,11 +62,11 @@ class Types t where
     apply :: Subst -> t -> t
     tv :: t -> [Tyvar]
 
-instance Types a => Types (Lex a) where
-    apply s (Lex p t) = Lex p (apply s t)
-    tv (Lex _ t) = tv t
+{-instance Types a => Types (Lex a) where-}
+    {-apply s (Lex p t) = Lex p (apply s t)-}
+    {-tv (Lex _ t) = tv t-}
 
-instance Types Type' where
+instance Types Type where
     apply s (TVar u) = fromMaybe (TVar u) (lookup u s)
     apply s (TAp l r) = TAp (apply s l) (apply s r)
     apply s t = t
@@ -106,7 +104,7 @@ instance HasKind Tyvar where
 instance HasKind Tycon where
     kind (Tycon _ k) = k
 
-instance HasKind Type' where
+instance HasKind Type where
     kind (TVar tv) = kind tv
     kind (TCons tc) = kind tc
     kind (TAp t _)  = case kind t of
@@ -126,7 +124,8 @@ instance Ord Kind where
 instance Show Kind where 
     show Star = "*"
     show (KFun k1 k2) = show k1 ++ " -> " ++ show k2
-instance Show Type' where
+
+instance Show Type where
     show (TAp (TAp (TCons (Tycon "->" _)) t1) t2) = 
         show t1 ++ " -> " ++ show t2
     show (TAp t1 t2) = let (i,ts) = bottom t1 [t2]
