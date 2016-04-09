@@ -44,9 +44,6 @@ getSubst = TI (\s n -> (s,n,s))
 unify :: Type' -> Type' -> TI ()
 unify t1 t2 = do s <- getSubst
                  u <- mgu (apply s t1) (apply s t2)
-                 {-s <- extSubst u-}
-                 {-ss <- checkSubst-}
-                 {-return s-}
                  extSubst u
     where extSubst s' = TI (\s n -> (s'@@s, n, ()))
 

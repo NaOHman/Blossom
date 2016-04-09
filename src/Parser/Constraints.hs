@@ -5,57 +5,50 @@ module Parser.Constraints where
 import Parser.Core
 import qualified Data.Foldable as F
 import Models.Expressions
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, maybeToList)
 import Control.Monad (liftM)
 import Types.Utils
 import Text.Megaparsec
 
------------------------------- Constraint Parsing -----------------------------
+-- TODO support Tuple sugar
 
--- TODO support Tuple and List sugar
 
--- parses an optional suffix ttype
-opSufCons :: BParser (Maybe Type)
+inlineQual = opList $ qual <* dot'
+
+topQual = opList $ inlineQual <|> (qual <* eol')
+
+qual = given *> sepBy1 pred comma' 
+    where pred = IsIn <$> uName <*> parenCsl ptype
+
+-- parses an optional suffix ptype
+opSufCons :: BParser (Maybe (Qual Type))
 opSufCons = optional sufCons
 
-sufCons = colon' *> ttype
+sufCons = colon' *> qualType
 
--- parses a ttype or fails
-ttype :: BParser Type
-ttype = tryList [scheme, mono, tvar, funCons] 
+-- parses a ptype or fails
+qualType = (:=>) <$> inlineQual <*> ptype
 
-mono :: BParser Type
-mono = tcons <$> (uName <|> unit) <*> return Star
-    where unit = rword "()" >> return ""
+ptype = tryList [pcons, pvar, pfun]
 
-tvar :: BParser Type
-tvar = TVar <$> (Tyvar <$> lName <*> return Star)
- 
--- TODO fix this 
-cons :: BParser Id -> BParser Type
-cons parser = do 
-    name <- parser
-    params <- angles1 ttype
+genType n p c = do
+    name <- n
+    params <- opList (angles1 p)
     let k = foldl (\s _ -> KFun Star s) Star params
-    return $ foldl TAp (tcons name k) params
+    return $ foldl TAp (c name k) params
 
-dataCons :: BParser Type
-dataCons = do
-    n <- uName
-    ts <- F.concat <$> optional (angles1 ttype)
-    let k = kAry (length ts)
-    return $ foldl TAp (TCons $ Tycon n k) ts
+pvar = genType lName ptype mkVar
 
-parseProd = fmap tProduct
+pcons = genType uName ptype mkCons
 
-dataScheme :: BParser Scheme
-dataScheme = liftM toScheme (instType >>= check)
-    where check t@(TCons _) = return t
-          check _ = fail "Something is terribly wrong"
+pfun = mkFun <$> angles ptype <*> (arrow' *> ptype) 
 
-instType = try uScheme <|> try mono
+-- Variable with all variable parameters
+vVar = genType lName vVar mkVar
 
-uScheme = cons uName
-scheme = cons aName
+-- Constructor with all variable parameters
+vCons = genType uName vVar mkCons
 
-funCons = TFun <$> angles ttype <*> (arrow' *> ttype)
+sugar = try unit <|> try list 
+    where unit = rword "()" >> return tUnit
+          list = TAp tList <$> brackets ptype 

@@ -24,7 +24,6 @@ import Data.Maybe (fromMaybe)
 type Subst = [(Tyvar, Type)]
 
 data Type = TVar Tyvar 
-          | TFun [Type] Type
           | TCons Tycon
           | TAp Type Type
           | TGen Int

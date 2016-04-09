@@ -126,6 +126,8 @@ reduceCtx ce ps = do qs <- toHnfs ce ps
 quantQual :: [Pred] -> Type -> Scheme
 quantQual ps t = quantify (tv t) (ps :=> t)
 
+quantAll t = quantify (tv t) t
+
 quantify :: [Tyvar] -> Qual Type -> Scheme
 quantify vs qt = Forall ks (apply s qt)
     where vs' = [v | v <- tv qt , v `elem` vs]
@@ -157,15 +159,19 @@ tList = TCons (Tycon "[]" (KFun Star Star))
 tArrow = TCons (Tycon "->" (KFun Star (KFun Star Star)))
 tcons n k = TCons (Tycon n k)
 
-tProduct :: [Type] -> Type
-tProduct ps = foldl TAp (TCons $ Tycon name (kAry len)) ps
-    where name = show len ++ "PROD"
-          len = length ps
+{-tProduct :: [Type] -> Type-}
+{-tProduct ps = foldl TAp (TCons $ Tycon name (kAry len)) ps-}
+    {-where name = show len ++ "PROD"-}
+          {-len = length ps-}
 
 assume :: [Tyvar] -> Id -> Type -> Assump
 assume tv id t = id :>: quantify tv ([] :=> t)
 
-mkFun ts t = tProduct ts `func` t
+mkFun ts t = prod ts `func` t
+qualFn (q1 :=> t1) (q2 :=> t2) = (q1 ++ q2) :=> (t1 `func` t2)
+
+mkCons n k = TCons $ Tycon n k
+mkVar n k = TVar $ Tyvar n k
 
 kAry 0 = Star
 kAry n = KFun Star (kAry (n-1))

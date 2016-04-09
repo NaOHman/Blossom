@@ -2,14 +2,6 @@
 module Models.Expressions 
     ( module Models.Core
     , module Models.Types
-    {-, Lex (..)-}
-    {-, PExpr' (..)-}
-    {-, Expr' (..)-}
-    {-, Literal' (..)-}
-    {-, ArgDec' (..)-}
-    {-, Arg' (..)-}
-    {-, Pat' (..)-}
-    , PExpr (..)
     , Expr (..)
     , Literal (..)
     , Pat (..)
@@ -17,6 +9,7 @@ module Models.Expressions
     , Expl(..)
     , Impl(..)
     , BindGroup(..)
+    , Binding(..)
     , Nameable(..)
     , Prod(..)
     ) where
@@ -32,41 +25,25 @@ type Impl = (Id, Expr)
 type Alt = (Pat, Expr)
 type BindGroup = ([Expl], [Impl])
 
-{-type PExpr = Lex PExpr'-}
-{-type Expr = Lex Expr'-}
-{-type Literal = Lex Literal'-}
-{-type ArgDec = Lex ArgDec'-}
-{-type Arg = Lex Arg'-}
-{-type Pat = Lex Pat'-}
-
 class Nameable a where
     nameOf :: a -> Id
 
-data PExpr = ELit Literal
-           | ECons Id [PExpr]
-           | EVar  Id
-           | EAbs  [(Id, Maybe Type)] PExpr
-           | EAp   PExpr [PExpr]
-           | ELet  [(Pat,PExpr)] PExpr
-           | ECase PExpr [(Pat,PExpr)]
-           | EAnnot PExpr Type
-           | EUnit
+data Binding = Expl Id Scheme Expr
+             | Impl Id Expr
     deriving Show
 
 data Expr = Lit Literal
-          | Var Id
-          | Let Id Expr Expr
-          | Ap Expr Expr
-          | Abs Pat Expr
-          | Case Expr [Alt] 
+          | Var  Id
+          | Abs  Alt
+          | Ap   Expr Expr
+          | Let  BindGroup Expr
+          | Case Expr [Alt]
+          | Annot Expr Scheme
     deriving Show
 
 data Literal = LChar Char
              | LInt    Integer
              | LFloat  Double
-             {-| LCons   Id [Literal']-}
-             {-| LDict   [(a,a)]-}
-             {-| LSet    [a]-}
              | LType   Id
              | LNull
     deriving Show
@@ -80,6 +57,10 @@ data Pat = PCons Id [Pat]
 
 class Prod a where
     prod :: [a] -> a
+
+instance Prod a => Prod (Qual a) where 
+    prod qs = let (ps,as) = unzip [(p,a) | p :=> a <- qs]
+              in concat ps :=> prod as
 
 instance Nameable a => Nameable (Lex a) where
     nameOf = nameOf . unwrap
