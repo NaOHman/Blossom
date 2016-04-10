@@ -14,11 +14,12 @@ import Text.Megaparsec.Expr
 
 expr = makeExprParser term operators <?> "expression"
 
-term = tryList [eCase, eAp, eLet, eAbs, eLit, eVar, parens expr]
+{-term = tryList [eCase, eAp, eLet, eAbs, eLit, eVar, parens expr]-}
+term = tryList [eCase, eLet, eAbs, eLit, eVar, parens expr]
 
 eLit = Lit <$> literal
 
-eVar = Var <$> aName
+eVar = Var <$> (aName <* notFollowedBy (symbol "(")) 
 
 -- lambdas with explicitly typed arguments are contained within annotations.
 
@@ -76,8 +77,9 @@ operators = [[uOp "+", uOp "-"],
          [bOp "and", bOp "or", bOp "xor"]]
 
 exblock ::  BParser Expr
-exblock = iBlock expr >>= chain
-    where chain [e] = return e
+exblock = try expr <|> multiLine
+    where multiLine = iBlock expr >>= chain
+          chain [e] = return e
           chain (e:es) = foldM conChain e es
           conChain (Let bg (Lit LNull)) e2 = return $ Let bg e2
           conChain (Let _ _ ) _ = fail "Something is horribly wrong"

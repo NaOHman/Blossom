@@ -82,10 +82,6 @@ csl p = between (symbol "(") (symbol ")") (sepBy p comma')
 angles p = between (symbol "<") (symbol ">") (sepBy p comma')
 angles1 p = between (symbol "<") (symbol ">") (sepBy1 p comma')
 
-lStr = rstring lowerChar
-{-subRef = (:) <$> char '.' <*> some digitChar-}
-uStr = rstring upperChar
-
 rword w = string w *> notFollowedBy alphaNumChar *> sc
 identifier = lexeme . rstring
 rstring firstCharParser = p >>= rwcheck
@@ -98,11 +94,6 @@ nameChars = alphaNumChar <|> char '_'
 
 tryList [p]    = try p
 tryList (p:ps) = try p <|> tryList ps
-
-{-topdec a b = nonIndented (genDec a b)-}
-
-{-genDec :: ([b] -> BParser a) -> BParser b -> BParser a-}
-{-genDec a b = indentBlock $ return $ L.IndentSome Nothing a b-}
 
 indentGuard i = getPosition >>= \p -> 
     when (sourceColumn p /= i) (fail "incorrect indentation")
@@ -134,15 +125,24 @@ block item = do
         fail $ "Not indented old " ++ show oldlvl ++ " new " ++ show newlvl
 
 topParser :: BParser b -> BParser [b]
-topParser =  indentedItems (-1) 0 
+topParser p = re 1
+    where go = indentSC >> get >>= re
+          re pos
+             | pos <= 1 = (:) <$> p <*> go
+             | otherwise  = do
+                    done <- optional eof
+                    case done of
+                        Just _ ->  return []
+                        otherwise -> do
+                            fail $ "Incorrect Indentation " ++ show pos
 
 indentedItems :: Int -> Int -> BParser a -> BParser [a]
 indentedItems ref lvl p = re lvl
     where go = indentSC >> get >>= re
           re pos
-            | pos <= ref = return []
-            | pos == lvl = (:) <$> p <*> go
-            | otherwise  = do
+             | pos <= ref = return []
+             | pos == lvl = (:) <$> p <*> go
+             | otherwise  = do
                     done <- optional eof
                     case done of
                         Just _ ->  return []

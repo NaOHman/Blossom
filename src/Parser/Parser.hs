@@ -14,9 +14,18 @@ import Control.Monad.State (evalStateT)
 
 blossomParser = evalStateT blossom 0
 
-blossom = indentedItems (-1) 0 top
+blossom = topParser top 
 
 top = nonIndented $ tryList [gVar, fBind, behavior, implem, adt, rdt]
+
+tFun = re []
+    where go prg = fBind >>= (\t -> return $ t : prg) >>= re
+          re prg = do done <- optional eof
+                      case done of
+                          Just _ -> return prg
+                          otherwise -> go prg
+ 
+insert = undefined
 
 gVar = Bind <$> do 
     name <- uName
