@@ -14,12 +14,10 @@ import Control.Monad.State (evalStateT)
 
 blossomParser = evalStateT blossom 0
 
-blossom = topParser top 
-
 top = nonIndented $ tryList [gVar, fBind, behavior, implem, adt, rdt]
 
-tFun = re []
-    where go prg = fBind >>= (\t -> return $ t : prg) >>= re
+blossom = re []
+    where go prg = top >>= (\t -> return $ t : prg) >>= re
           re prg = do done <- optional eof
                       case done of
                           Just _ -> return prg

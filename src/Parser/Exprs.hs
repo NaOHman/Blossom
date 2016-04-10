@@ -14,15 +14,17 @@ import Text.Megaparsec.Expr
 
 expr = makeExprParser term operators <?> "expression"
 
-{-term = tryList [eCase, eAp, eLet, eAbs, eLit, eVar, parens expr]-}
-term = tryList [eCase, eLet, eAbs, eLit, eVar, parens expr]
+term = tryList [eCase, eAp, eLet, eAbs, eLit, eVar, parens expr]
+
+noApExpr = makeExprParser noApTerms operators <?> "expression"
+    where noApTerms = tryList [eCase, eLet, eAbs, eLit, eVar, parens expr]
 
 eLit = Lit <$> literal
 
-eVar = Var <$> (aName <* notFollowedBy (symbol "(")) 
+{-eVar = Var <$> (aName <* notFollowedBy (symbol "(" <|> dot')) -}
+eVar = Var <$> aName
 
 -- lambdas with explicitly typed arguments are contained within annotations.
-
 eAbs = do
     (lam, mt) <- lambda
     return $ case mt of
@@ -42,11 +44,12 @@ args = do
     return (prod $ map PVar as, qs)
     where arg = (,) <$> lName <*> opSufCons
 
-eAp = regCall <|> subRef
-    where subRef = do ex <- expr
-                      field <- char '.' *> eVar
-                      return $ Ap field (prod [ex])
-          regCall = Ap <$> expr <*> fArgs
+eAp = try regCall <|> subRef
+    where subRef = do
+                ex <- noApExpr
+                field <- char '.' *> eVar
+                return $ Ap field (prod [ex])
+          regCall = Ap <$> noApExpr <*> fArgs
 
 eLet =  do i <- lName 
            sch <- opSufCons 
@@ -67,8 +70,6 @@ pat  =  try (PCons <$> uName <*> (try (csl pat) <|> return []))
     <|> try (PVar  <$> lName)
     <|> try (symbol "_" >> return PNil)
 
-{-cTimeLit = literal (withPos (ELit <$> cTimeLit))-}
-
 operators = [[uOp "+", uOp "-"],
          [bOp "*", bOp "/", bOp "//", bOp "%"],
          [bOp "+", bOp "-"],
@@ -77,9 +78,8 @@ operators = [[uOp "+", uOp "-"],
          [bOp "and", bOp "or", bOp "xor"]]
 
 exblock ::  BParser Expr
-exblock = try expr <|> multiLine
-    where multiLine = iBlock expr >>= chain
-          chain [e] = return e
+exblock = iBlock expr >>= chain
+    where chain [e] = return e
           chain (e:es) = foldM conChain e es
           conChain (Let bg (Lit LNull)) e2 = return $ Let bg e2
           conChain (Let _ _ ) _ = fail "Something is horribly wrong"
