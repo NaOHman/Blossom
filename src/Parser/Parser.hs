@@ -12,6 +12,12 @@ import qualified Data.List as L
 import Control.Monad (void, foldM, ap, liftM)
 import Control.Monad.State (evalStateT)
 
+runTests fname = do
+    res <- parseFromFile blossomParser fname
+    case res of 
+        Right bs -> void $ mapM print bs
+        Left err -> print err
+
 blossomParser = evalStateT blossom 0
 
 top = nonIndented $ tryList [gVar, fBind, behavior, implem, adt, rdt]
@@ -23,8 +29,6 @@ blossom = re []
                           Just _ -> return prg
                           otherwise -> go prg
  
-insert = undefined
-
 gVar = Bind <$> do 
     name <- uName
     sch <- opSufCons
@@ -34,37 +38,40 @@ gVar = Bind <$> do
         _      -> Impl name ex
   
 fBind = Bind <$> fDec
+fDec = try inline <|> try blk
+    where blk = block f header expr
+          inline = do (p, fn) <- header
+                      ex <- expr
+                      return $ fn (Abs (p,ex))
+          header = do 
+              q <- topQual
+              n <- fun' *> lName
+              (p, mqt) <- args
+              return (p, case mqt of
+                  Just (qs :=> t) -> 
+                      let sch = quantUser ((q ++ qs) :=> t)
+                      in Expl n sch      
+                  Nothing -> Impl n)
+          f (p,fn) exs = fn (Abs (p, chain exs))
 
-fDec = do
-    q <- topQual
-    f <- fun' *> lName
-    (lam, mt) <- lambda
-    return $ case mt of
-        Just (qs :=> t) -> Expl f (quantQual (q ++ qs) t) lam
-        _      -> Impl f lam
+adt = Dta <$> block ($) header cStub
+    where header = ADT <$> topQual <*> (data_ *> vCons <* where_)
+          cStub = (,) <$> uName <*> opList (parenCsl ptype)
 
-adt = Dta <$> do 
-    q <- topQual
-    newType <- data_ *> vCons <* where_
-    cstrs <- block cStub
-    return $ ADT (q :=> newType) cstrs
-    where cStub = (,) <$> uName <*> opList (parenCsl ptype)
+rdt = Dta <$> block ($) header field 
+    where header = do q <- topQual 
+                      t <- data_ *> vCons
+                      ss <- superTypes <* where_
+                      return (Rec q t ss)
+          field = (,) <$> (dot' *> lName) <*> (colon' *> ptype)
+          superTypes = opList (inherits *> sepBy1 vCons comma')
 
-rdt = Dta <$> do 
-    q <- topQual
-    newType <- data_ *> vCons 
-    superTypes <- opList (inherits *> sepBy1 vCons comma')
-    fields <- where_ *> block field 
-    return $ Rec (q :=> newType) superTypes fields
-    where field = (,) <$> (dot' *> lName) <*> (colon' *> ptype)
-
-behavior = Bvr <$> do 
-    q <- topQual
-    t <- vVar
-    name <- is' *> uName <* when'
-    stubs <- block stub
-    return $ Bhvr (q :=> t) name stubs
-    where stub = do 
+behavior = Bvr <$> block ($) header stub 
+    where header = do q <- topQual
+                      t <- vVar
+                      name <- is' *> uName <* when'
+                      return (Bhvr q t name)
+          stub = do 
                 name <- lName 
                 ts <- optional $ parenCsl ptype
                 rt <- colon' *> ptype
@@ -72,9 +79,8 @@ behavior = Bvr <$> do
                     Just ts -> ts `mkFun` rt
                     Nothing -> rt)
 
-implem = Imp <$> do
-    q <- topQual
-    t <- ptype
-    bhvr <- is' *> uName <* because'
-    bindings <- block fDec
-    return $ Im (q :=> t) bhvr bindings
+implem = Imp <$> block ($) header fDec
+    where header = do q <- topQual
+                      t <- ptype
+                      bhvr <- is' *> uName <* because'
+                      return (Im q t bhvr)

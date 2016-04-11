@@ -15,13 +15,15 @@ m<a> is Mappable when
     map (m<a>, <a,b> -> b) : m<b>
 
 List<a> is Mappable because
-    fun map(fn, list) -> case list of
-        Nil -> []
-        Cons(a,as) -> Cons(fn(a), map(fn, as))
+    fun map(fn, list) -> 
+        case list of
+            Nil -> Nil
+            Cons(a,as) -> Cons(fn(a), map(fn, as))
 
-fun factorial(x : Int) -> case x of
-    1 -> 1
-    _ -> x * factorial(x - 1)
+fun factorial(x : Int) -> 
+    case x of
+        1 -> 1
+        _ -> x * factorial(x - 1)
 
 fun id(x) -> 
     x
@@ -33,6 +35,6 @@ fun main() ->
     x = 4
     id(x)
     print(square(x))
-    print("Hello World!")
-    print("The factorial of 4 is:")
+    /*print("Hello World!")*/
+    /*print("The factorial of 4 is:")*/
     print(fac(x))

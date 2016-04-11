@@ -19,22 +19,26 @@ data Top = Bind Binding
          | Imp Implementation
          | Dta Data
          | Bvr Behavior
-    deriving Show
 
-data Data = ADT (Qual Type) [(Id, [Type])]
-          | Rec (Qual Type) [Type] [(Id, Type)]
+data Data = ADT [Pred] Type [(Id, [Type])]
+          | Rec [Pred] Type [Type] [(Id, Type)]
     deriving Show
 
 -- Type is Id when stubs
-data Behavior = Bhvr (Qual Type) Id [(Id, Type)]
+data Behavior = Bhvr [Pred] Type Id [(Id, Type)]
     deriving Show
 
-data Implementation = Im (Qual Type) Id [Binding]
+data Implementation = Im [Pred] Type Id [Binding]
     deriving Show
 
 
 type ClassEnv = M.Map Id Class
 
+instance Show Top where
+    show (Bind b) = show b
+    show (Imp b) = show b
+    show (Dta b) = show b
+    show (Bvr b) = show b
 defClasses = M.fromList 
  [("Eq",        ([],[]))
  ,("Ord",       (["Eq"],[]))

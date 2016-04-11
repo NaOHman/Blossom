@@ -19,6 +19,7 @@ import Models.Types
 import Parser.Core
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import Data.List (intercalate)
     
 type Expl = (Id, Scheme, Expr)
 type Impl = (Id, Expr)
@@ -44,16 +45,26 @@ data Expr = Lit Literal
 data Literal = LChar Char
              | LInt    Integer
              | LFloat  Double
-             | LType   Id
              | LNull
-    deriving Show
+
+instance Show Literal where
+    show (LChar  c) = show c
+    show (LInt   i) = show i
+    show (LFloat d) = show d
+    show LNull      = "Null"
 
 data Pat = PCons Id [Pat]
          | PAs   Id Pat
          | PLit  Literal
          | PVar  Id
          | PNil
-    deriving Show
+
+instance Show Pat where
+    show PNil     = "_"
+    show (PLit l) = show l
+    show (PVar v) = v
+    show (PCons v ps) = v ++ "(" ++ subPats ++ ")"
+        where subPats = intercalate ", " $ map show ps
 
 class Prod a where
     prod :: [a] -> a

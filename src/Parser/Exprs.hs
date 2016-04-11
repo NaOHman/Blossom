@@ -9,39 +9,39 @@ import Parser.Literals
 import Types.Utils
 import Parser.Constraints
 import Control.Monad (liftM, foldM)
+import Control.Monad.State
 import Text.Megaparsec
 import Text.Megaparsec.Expr
 
 expr = makeExprParser term operators <?> "expression"
 
-term = tryList [eCase, eAp, eLet, eAbs, eLit, eVar, parens expr]
+term = tryList [eAbs, eCase, eAp, eLet, eLit, eVar, parens expr]
 
 noApExpr = makeExprParser noApTerms operators <?> "expression"
-    where noApTerms = tryList [eCase, eLet, eAbs, eLit, eVar, parens expr]
+    where noApTerms = tryList [eAbs, eCase, eLet, eLit, eVar, parens expr]
 
 eLit = Lit <$> literal
 
-{-eVar = Var <$> (aName <* notFollowedBy (symbol "(" <|> dot')) -}
 eVar = Var <$> aName
 
 -- lambdas with explicitly typed arguments are contained within annotations.
 eAbs = do
     (lam, mt) <- lambda
     return $ case mt of
-        Just t  -> Annot lam (quantAll t)
-        Nothing -> lam
+        Just sc  -> Annot (Abs lam) (quantUser sc)
+        Nothing -> Abs lam
 
-lambda = do
-    (args, qts) <- args
-    rt <- opSufCons
-    ex <- arrow' *> expr
-    let lambda = Abs (args, ex)
-        mSch = fScheme qts rt
-    return (lambda, mSch)
-        
+lambda :: BParser (Alt, Maybe (Qual Type))
+lambda = do ((pat, mt), ex) <- exblock (,) args
+            return ((pat, ex), mt)
+
+args :: BParser (Pat, Maybe (Qual Type))
 args = do 
-    (as,qs) <- unzip <$> parenCsl arg 
-    return (prod $ map PVar as, qs)
+    (as,qts) <- unzip <$> parenCsl arg 
+    rt <- opSufCons <* arrow'
+    mt <- funcAnnot qts rt
+    let p = prod $ map PVar as
+    return (p, mt)
     where arg = (,) <$> lName <*> opSufCons
 
 eAp = try regCall <|> subRef
@@ -58,9 +58,9 @@ eLet =  do i <- lName
               Just s -> Let ([(i, quantAll s, ex)], []) eUnit
               _ -> Let ([],[(i, ex)]) eUnit
 
-eCase = Case <$> header <*> iBlock branch
+eCase = block Case header branch
     where header = case_ *> expr <* of_
-          branch = (,) <$> (pat <* arrow') <*> exblock 
+          branch = exblock (,) (pat <* arrow')
    
 eAnnot = Annot <$> expr <*> (quantAll <$> sufCons)
 
@@ -77,19 +77,21 @@ operators = [[uOp "+", uOp "-"],
          [uOp "not"],
          [bOp "and", bOp "or", bOp "xor"]]
 
-exblock ::  BParser Expr
-exblock = iBlock expr >>= chain
-    where chain [e] = return e
-          chain (e:es) = foldM conChain e es
-          conChain (Let bg (Lit LNull)) e2 = return $ Let bg e2
-          conChain (Let _ _ ) _ = fail "Something is horribly wrong"
-          conChain e1 e2 = return $ Ap (Var "!seq") (prod [e1, e2])
+exblock ::  (a -> Expr -> b) -> BParser a -> BParser b 
+exblock f h = try (f <$> h <*> expr) <|> try (block f' h expr)
+    where f' d es = f d (chain es)
+
+chain = foldl1 chain'
+    where chain' (Let bg (Lit LNull)) e2 = Let bg e2
+          chain' e1 e2 = Ap (Var "!seq") (prod [e1, e2])
 
 uOp s = Prefix $ try $
-    rword s *> return (\e -> opAp (s++"UN") (prod [e]))
+    rword s *> notFollowedBy (symbol ">") *>
+       return (\e -> opAp (s++"UN") (prod [e]))
 
 bOp s = InfixL $ try $
-    rword s *> return (\e1 e2 -> opAp s (prod [e1, e2]))
+    rword s *> notFollowedBy (symbol ">") *>
+        return (\e1 e2 -> opAp s (prod [e1, e2]))
 
 opAp s = Ap (Var s)
 
@@ -100,13 +102,31 @@ fArgs = prod <$> parenCsl expr
 
 eUnit = Lit LNull
 
-toVars = zipWith fromMaybe defVars
+funcAnnot :: [Maybe (Qual Type)] -> Maybe (Qual Type) -> BParser (Maybe (Qual Type))
+funcAnnot ts Nothing 
+    | all isNothing ts = return Nothing
+    | otherwise = do
+        rt <- newTVar Star
+        funcAnnot ts (Just $ [] :=> rt)
+funcAnnot ts (Just rt) = do
+    args <- prod <$> toVars ts
+    return $ Just $ args `qualFn` rt
 
-defVars = [[] :=> (TVar $ Tyvar ("!var" ++ show v) Star) | v <- [0..]]
+newTVar :: Kind -> BParser Type
+newTVar k = do i <- get
+               put (i+1)
+               return (TVar $ Tyvar ("!var" ++ show i) k)
 
-fScheme ts Nothing 
-    | all isNothing ts = Nothing
-    | otherwise = fScheme ts rt
-    where rt = Just ([] :=> (TVar $ Tyvar "%rt" Star))
-fScheme ts (Just rt) = let t = prod (toVars ts) `qualFn` rt
-                       in Just t
+toVars :: [Maybe (Qual Type)]  -> BParser [Qual Type]
+toVars [] = return []
+toVars (Nothing:ts) = do tv <- newTVar Star
+                         tss <- toVars ts
+                         return $ ([] :=> tv) : tss
+toVars (Just t :ts) = do tss <- toVars ts
+                         return $ t:tss
+
+quantUser :: Qual Type -> Scheme
+quantUser qt = let tvs = filter userDef (tv qt)
+               in quantify tvs qt
+    where userDef (Tyvar ('!':_) _) = False
+          userDef _ = True
