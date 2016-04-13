@@ -24,10 +24,10 @@ main = do
            let (ce, as, ex) = validate tops
            putStrLn "Assumptions:"
            mapM_ print as
-           {-putStrLn "Main:"-}
-           {-print ex-}
-           {-putStrLn "ClassEnv:"-}
-           {-print ce-}
+           putStrLn "Main:"
+           print ex
+           putStrLn "ClassEnv:"
+           print ce
            putStrLn "Passed PreProcessor"
 
            {-print bs-}

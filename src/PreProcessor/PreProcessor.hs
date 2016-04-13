@@ -146,7 +146,7 @@ makeSuperClass s@(Rec q t ss fs) impl =
 bindSup :: ([Binding],[OBind]) -> Rec -> PP ([Binding], [OBind])
 bindSup (bs,stubs) r@(Rec q t _ ss) = do 
     let fbs = fieldBinds r
-        (over,under) = break inStubs fbs
+        (over,under) = split inStubs fbs
         --TODO VALIDATE THIS ASSUMPTION
         obs = map (\(i,_,e) -> (i,e)) over
     unless (length stubs == length over) 
@@ -177,7 +177,7 @@ filterInherits rs = do (a,b,_) <- foldM f ([],[],[]) rs
 overload :: [(Id, Scheme, Expr)] -> PP ([Binding], ClassEnv)
 overload bs = do
     let groups = groupExpl bs
-        (under,over) = break ((1 ==) . length) groups
+        (under,over) = split ((1 ==) . length) groups
     return under
     ce <- M.unions <$> mapM overBehavior over
     let bnds = map Expl (concat under)
@@ -197,15 +197,11 @@ overBehavior bs@((i,_, _):_) = do
           bindPairs (_, sc, ex) = if null (tv sc)
                 then (do qt <- freshInst sc
                          return (qt,ex))
-                else fail "Incomplete type signature for"
+                else fail $ "Incomplete type signature for "++i
 
-splitWith fn ss = let s = map fn ss
-                 in (concatMap fst s, concatMap snd s)
-
-splitBinds = splitWith splitBind 
-    where  splitBind (Expl e) = ([e],[]) 
-
-           splitBind (Impl i) = ([],[i]) 
+splitBinds = foldl f ([],[]) 
+    where  f (es, is) (Expl e) = (e:es,is) 
+           f (es, is) (Impl i) = (es,i:is)
 
 freshInst :: Scheme -> PP (Qual Type)
 freshInst (Forall ks qt) = do ts <- mapM newTVar ks
@@ -224,9 +220,9 @@ fullAp _ _ = return ()
 
 genMain :: [Binding] -> PP Expr
 genMain bs = do
-    let (m, bs) = break (("main" ==) . bindingName) bs
+    let (m, bs') = split (("main" ==) . bindingName) bs
     unless (length m == 1) (fail "Could not find main")
-    return $ Let (splitBinds bs) (exprOf $ head m)
+    return $ Let (splitBinds bs') (exprOf $ head m)
     where exprOf (Impl (_,e)) = e
           exprOf (Expl (_,_,e)) = e
     
@@ -245,6 +241,9 @@ splitTops = foldl split ([],[],[],[],[])
 
 tname (Tycon n _) = n
 qualed (Rec q t _ _) = q :=> t
+
+split p = foldl f ([],[])
+    where f (as,bs) x = if p x then (x:as,bs) else (as,x:bs)
 
 obName (OBind n _ _) = n
 
