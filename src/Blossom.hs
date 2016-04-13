@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs, TupleSections #-}
 
 import Parser.Parser
+import PreProcessor.PreProcessor
 import Types.Inference
 import Types.Utils
 import Models.Program
@@ -14,16 +15,26 @@ import Control.Monad.State
 
 main = do 
     (dbg, file, mainArgs) <- parseArgs <$> getArgs
-    parsed <- parseFromFile (evalStateT parseBlossom 0) file
+    parsed <- parseBlossomFile file
     case parsed of
         Left err -> print err
-        Right p@(Program as bs m d ce) -> do
-           putStrLn "Hello"
+        Right tops -> do
+           mapM_ print tops
+           putStrLn "Parse Successful!"
+           let (ce, as, ex) = validate tops
+           putStrLn "Assumptions:"
+           mapM_ print as
+           {-putStrLn "Main:"-}
+           {-print ex-}
+           {-putStrLn "ClassEnv:"-}
+           {-print ce-}
+           putStrLn "Passed PreProcessor"
+
            {-print bs-}
-           mapM_ print (as ++ defaultAssumps)
-           let as' = tiProgram ce (as ++ defaultAssumps) bs
-           print as
-           putStrLn "Success"
+           {-mapM_ print (as ++ defaultAssumps)-}
+           {-let as' = tiProgram ce (as ++ defaultAssumps) bs-}
+           {-print as-}
+           {-putStrLn "Success"-}
            {-case preprocess s of-}
                {-Left err -> print err-}
                {-Right (ws,scp) -> do-}
@@ -71,8 +82,8 @@ defaultAssumps = map toAsmp [
   ,("not",   "",           ubool)
   ]
   {-,("print", "",           mkFun [tString] unit)-}
-  where binary = mkFun' [v',v'] v'
-        unary  = mkFun' [v']   v'
+  where binary = mkFun [v',v'] v'
+        unary  = mkFun [v']   v'
         bbool = tBool `func` tBool `func` tBool
         ubool = tBool 
         bool = Tycon "Bool" Star

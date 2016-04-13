@@ -3,6 +3,8 @@
 module Models.Program 
     ( module X
     , ClassEnv(..)
+    , Rec(..)
+    , Adt(..)
     , Top(..)
     , Data(..)
     , Behavior(..)
@@ -10,34 +12,53 @@ module Models.Program
     ) where
 
 import Models.Expressions as X
-import Models.Core as X
 import Text.Megaparsec.Pos
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 
 data Top = Bind Binding
          | Imp Implementation
-         | Dta Data
+         | ADT Adt
+         | RDT Rec
          | Bvr Behavior
 
-data Data = ADT [Pred] Type [(Id, [Type])]
-          | Rec [Pred] Type [Type] [(Id, Type)]
-    deriving Show
+class Data d where
+    dQual ::  d -> [Pred]
+    dTCons :: d -> Tycon
+    dCstrs :: d -> [(Id, Scheme)]
+    dNames :: d -> [Id]
+
+data Adt = Adt 
+    { aqual   :: [Pred]
+    , atycon :: Type
+    , acnstrs :: [(Id, [Type])]
+    } deriving Show
+
+data Rec = Rec 
+    { rqual :: [Pred] 
+    , rtycon :: Type
+    , sups :: [Type]
+    , rfields :: [(Id, Type)]
+    } deriving Show
 
 -- Type is Id when stubs
 data Behavior = Bhvr [Pred] Type Id [(Id, Type)]
     deriving Show
 
-data Implementation = Im [Pred] Type Id [Binding]
+data Implementation = Im [Pred] Type Id [Impl]
     deriving Show
 
 
 type ClassEnv = M.Map Id Class
 
+{-instance Show (M.Map Id Class) where-}
+    {-show = show . M.elems-}
+
 instance Show Top where
     show (Bind b) = show b
     show (Imp b) = show b
-    show (Dta b) = show b
+    show (ADT b) = show b
+    show (RDT b) = show b
     show (Bvr b) = show b
 defClasses = M.fromList 
  [("Eq",        ([],[]))

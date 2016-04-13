@@ -9,12 +9,10 @@ module Models.Types
     , Pred(..)
     , Scheme(..)
     , Assump(..)
-    , Class(..)
     , Inst(..)
     , HasKind(..)
     , Types(..)
-    {-, ClassEnv(..)-}
-    {-, Type'(..)-}
+    , Instantiate(..)
     ) where
 
 import Models.Core
@@ -49,8 +47,6 @@ data Scheme = Forall [Kind] (Qual Type)
 
 data Assump = Id :>: Scheme
     deriving (Eq, Show)
-
-type Class = ([Id], [Inst])
 
 type Inst = Qual Pred
 
@@ -136,6 +132,21 @@ instance Show Type where
 
 instance Show Tyvar where
     show (Tyvar v k) = v ++ "(" ++ show k ++ ")"
+
+class Instantiate t where
+    inst :: [Type] -> t -> t
+
+instance Instantiate Type where
+    inst ts (TAp l r) = TAp (inst ts l) (inst ts r)
+    inst ts (TGen n)  = ts !! n
+    inst ts t         = t
+instance Instantiate a => Instantiate [a] where
+    inst ts = map (inst ts)
+instance Instantiate t => Instantiate (Qual t) where
+    inst ts (ps:=>t) = inst ts ps :=> inst ts t
+instance Instantiate Pred where
+    inst ts (IsIn c t) = IsIn c (inst ts t)
+
 
 bottom (TAp t1 t2) ts = bottom t1 (t2:ts)
 bottom t ts = (show t, ts)

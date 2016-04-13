@@ -1,3 +1,5 @@
+{-# LANGUAGE TupleSections #-}
+
 module Parser.Parser where
 
 import Parser.Core
@@ -12,7 +14,9 @@ import qualified Data.List as L
 import Control.Monad (void, foldM, ap, liftM)
 import Control.Monad.State (evalStateT)
 
-runTests fname = do
+parseBlossomFile = parseFromFile blossomParser 
+
+test fname = do
     res <- parseFromFile blossomParser fname
     case res of 
         Right bs -> void $ mapM print bs
@@ -34,8 +38,8 @@ gVar = Bind <$> do
     sch <- opSufCons
     ex <- equals' *> expr
     return $ case sch of
-        Just qt -> Expl name (quantAll qt) ex
-        _      -> Impl name ex
+        Just qt -> Expl (name, quantAll qt, ex)
+        _      -> Impl (name, ex)
   
 fBind = Bind <$> fDec
 fDec = try inline <|> try blk
@@ -50,15 +54,15 @@ fDec = try inline <|> try blk
               return (p, case mqt of
                   Just (qs :=> t) -> 
                       let sch = quantUser ((q ++ qs) :=> t)
-                      in Expl n sch      
-                  Nothing -> Impl n)
+                      in (Expl . (n, sch,))
+                  Nothing -> Impl . (n,))
           f (p,fn) exs = fn (Abs (p, chain exs))
 
-adt = Dta <$> block ($) header cStub
-    where header = ADT <$> topQual <*> (data_ *> vCons <* where_)
+adt = ADT <$> block ($) header cStub
+    where header = Adt <$> topQual <*> (data_ *> vCons <* where_)
           cStub = (,) <$> uName <*> opList (parenCsl ptype)
 
-rdt = Dta <$> block ($) header field 
+rdt = RDT <$> block ($) header field 
     where header = do q <- topQual 
                       t <- data_ *> vCons
                       ss <- superTypes <* where_
@@ -79,8 +83,12 @@ behavior = Bvr <$> block ($) header stub
                     Just ts -> ts `mkFun` rt
                     Nothing -> rt)
 
-implem = Imp <$> block ($) header fDec
-    where header = do q <- topQual
+implem = Imp <$> block ($) header fDec'
+    where fDec' = do bs <- fDec
+                     return $ toImpl bs 
+          toImpl (Expl (i,_,e)) = (i,e)
+          toImpl (Impl i) = i
+          header = do q <- topQual
                       t <- ptype
                       bhvr <- is' *> uName <* because'
                       return (Im q t bhvr)

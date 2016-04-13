@@ -41,47 +41,29 @@ runTI (TI f) = x where (_, _, x) = f nullSubst 0
 getSubst :: TI Subst
 getSubst = TI (\s n -> (s,n,s))
 
-unify :: Type' -> Type' -> TI ()
+unify :: Type -> Type -> TI ()
 unify t1 t2 = do s <- getSubst
                  u <- mgu (apply s t1) (apply s t2)
                  extSubst u
     where extSubst s' = TI (\s n -> (s'@@s, n, ()))
 
-newTVar :: Kind -> TI Type'
+newTVar :: Kind -> TI Type
 newTVar k = TI (\s n -> let v = Tyvar (enumId n) k
                         in (s, n+1, TVar v))
 
-freshInst :: Scheme -> TI (Qual Type')
+freshInst :: Scheme -> TI (Qual Type)
 freshInst (Forall ks qt) = do ts <- mapM newTVar ks
                               return (inst ts qt)
 
-class Instantiate t where
-    inst :: [Type'] -> t -> t
-
-instance Instantiate a => Instantiate (Lex a) where
-    inst ts (Lex p a) = Lex p (inst ts a)
-instance Instantiate Type' where
-    inst ts (TAp l r) = TAp (inst ts l) (inst ts r)
-    inst ts (TGen n)  = ts !! n
-    inst ts t         = t
-instance Instantiate a => Instantiate [a] where
-    inst ts = map (inst ts)
-instance Instantiate t => Instantiate (Qual t) where
-    inst ts (ps:=>t) = inst ts ps :=> inst ts t
-instance Instantiate Pred where
-    inst ts (IsIn c t) = IsIn c (inst ts t)
-
 type Infer e t = ClassEnv -> [Assump] -> e -> TI ([Pred], t)
 
-tiExpr :: Infer Expr Type'
-tiExpr ce as (Lex p e) = tiExpr' ce as e
-
-tiExpr' ce as (Var i) =  lookupSc as i
-tiExpr' ce as (Lit l) = tiLit' l
-tiExpr' ce as (Abs p e) = tiAlt' ce as (p,e)
-tiExpr' ce as (Ap e1 e2) = do 
-    (ps, t1) <- tiExpr' ce as e1
-    (qs, t2) <- tiExpr' ce as e2 
+tiExpr :: Infer Expr Type
+tiExpr ce as (Var i) =  lookupSc as i
+tiExpr ce as (Lit l) = tiLit l
+tiExpr ce as (Abs a) = tiAlt ce as a
+tiExpr ce as (Ap e1 e2) = do 
+    (ps, t1) <- tiExpr ce as e1
+    (qs, t2) <- tiExpr ce as e2 
     t <- newTVar Star
     unify t1 (t2 `func` t)
     return (ps ++ qs, t) 
@@ -90,34 +72,31 @@ tiExpr' ce as (Ap e1 e2) = do
                                  {-(qs, t) <- tiExpr ce (as' ++ as) ex'-}
                                  {-return (ps++qs, t)-}
 
-tiExpr' ce as (Case e bs) = fail "CASE"
-tiExpr' ce as (Let{}) = fail "LET"
+tiExpr ce as (Case e bs) = fail "CASE"
+tiExpr ce as (Let{}) = fail "LET"
 
-tiExprs' ce as ts = do res <- mapM (tiExpr' ce as) ts
-                       let ps' = concat [ps | (ps,_) <- res]
-                           ts' = [ts | (_,ts) <- res]
-                       return (ps',ts')
+tiExprs ce as ts = do res <- mapM (tiExpr ce as) ts
+                      let ps' = concat [ps | (ps,_) <- res]
+                          ts' = [ts | (_,ts) <- res]
+                      return (ps',ts')
 
 lookupSc as i = do
     sc <- find i as
     (ps :=> t) <- freshInst sc
     return (ps,t)
 
-tiLit :: Literal -> TI ([Pred], Type')
-tiLit = tiLit' . unwrap
-
-tiLit' (LChar _)   = return ([], tChar)
-tiLit' (LInt _)    = return ([], tInt)
-tiLit' (LFloat _)  = return ([], tFloat)
-tiLit' (LType _)   = return ([], tType)
-tiLit' LNull       = return ([], tNull)
+tiLit :: Literal -> TI ([Pred], Type)
+tiLit (LChar _)   = return ([], tChar)
+tiLit (LInt _)    = return ([], tInt)
+tiLit (LFloat _)  = return ([], tFloat)
+tiLit LNull       = return ([], tNull)
 
 
-tiPat :: [Assump] -> Pat -> TI ([Pred], [Assump], Type')
-tiPat as (Lex pos t) = uniqVars t >>= tiPat' as
+tiPat :: [Assump] -> Pat -> TI ([Pred], [Assump], Type)
+tiPat as t = uniqVars t >>= tiPat as
     where uniqVars p = if uniq' (varNames p)
                           then return p
-                          else fail $ show pos ++ "Variable names in patterns must be unique"
+                          else fail "Variable names in patterns must be unique"
           uniq' (x:y:zs) = x /= y && uniq' (y:zs) && uniq' (x:zs)
           uniq' _ = True
           varNames (PAs i p) = i : varNames p
@@ -135,7 +114,7 @@ tiPat' _ PNil = do
     v <- newTVar Star
     return([],[],v)
 tiPat' as (PLit l) = do 
-    (ps,t) <- tiLit' l
+    (ps,t) <- tiLit l
     return (ps, [], t)
 tiPat' ass (PCons i pats) = do 
     --TODO Arity check
@@ -146,21 +125,17 @@ tiPat' ass (PCons i pats) = do
     unify scType (foldr func rt ts)
     return (ps ++ qs, as, rt)
 
-tiPats :: [Assump] -> [Pat'] -> TI ([Pred], [Assump], [Type'])
+tiPats :: [Assump] -> [Pat] -> TI ([Pred], [Assump], [Type])
 tiPats ass ps = do ppat <- mapM (tiPat' ass)  ps
                    let ps = concat [ps' | (ps',_,_) <- ppat]
                        as = concat [as' | (_,as',_) <- ppat]
                        ts = [t | (_,_,t) <- ppat]
                    return (ps, as, ts)
 
-tiAlt :: Infer Alt Type'
+tiAlt :: Infer Alt Type
 tiAlt ce as (pat, e) = do (ps, as', tp) <- tiPat as pat
                           (qs, te) <- tiExpr ce (as' ++ as) e
                           return (ps ++ qs, tp `func` te)
-
-tiAlt' ce as (pat, e) = do (ps, as', tp) <- tiPat' as pat
-                           (qs, te) <- tiExpr' ce (as' ++ as) e
-                           return (ps ++ qs, tp `func` te)
 
 tiAlts ce as alts t = do psts <- mapM (tiAlt ce as) alts
                          mapM_ (unify t .snd) psts

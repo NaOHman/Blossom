@@ -10,10 +10,10 @@ import Control.Monad (msum, liftM, ap, liftM2)
 import qualified Data.Map as M
 
 super :: ClassEnv -> Id -> [Id]
-super ce i = case M.lookup i ce of Just (is,_) -> is
+super ce i = case M.lookup i ce of Just (is,_,_) -> is
 
 insts :: ClassEnv -> Id -> [Inst]
-insts ce i = case M.lookup i ce of Just (_,ins) -> ins
+insts ce i = case M.lookup i ce of Just (_,ins,_) -> ins
 
 defined = isJust
 
@@ -175,3 +175,27 @@ mkVar n k = TVar $ Tyvar n k
 
 kAry 0 = Star
 kAry n = KFun Star (kAry (n-1))
+
+instance Data Adt where
+    dQual = aqual
+    dTCons (Adt _ t _) = getCons t
+    dNames (Adt _ t cs) = let (Tycon n _) = getCons t
+                              cNames = map fst cs
+                          in n : cNames
+    dCstrs (Adt q t cs) = map toCstr cs
+         where toCstr (n,ts) = (n, quantQual q $ ts `mkFun` t)
+
+getCons (TCons t) = t
+getCons (TAp t _) = getCons t
+
+instance Data Rec where
+    dQual = rqual
+    dTCons (Rec _ t _ _)= getCons t
+    dNames (Rec _ t _ _)= let (Tycon n _) = getCons t
+                          in [n]
+    dCstrs (Rec q t _ fs) = 
+        let (Tycon n _) = getCons t
+            ts = map snd fs
+        in [(n, quantQual q $ ts `mkFun` t)]
+
+
