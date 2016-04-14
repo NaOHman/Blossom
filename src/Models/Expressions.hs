@@ -13,7 +13,7 @@ module Models.Expressions
     , BindGroup(..)
     , Binding(..)
     , Nameable(..)
-    , Prod(..)
+    {-, Prod(..)-}
     ) where
 
 import Models.Core
@@ -31,7 +31,7 @@ data OBind = OBind Id (Type -> Type) Expr
 instance Show OBind where
     show (OBind i _ e) = show (i,e)
 
-type Alt = (Pat, Expr)
+type Alt = ([Pat], Expr)
 type BindGroup = ([Expl], [Impl])
 type Class = ([Id], [Inst], [OBind])
 
@@ -55,7 +55,7 @@ instance Show Expr where
     show (Lit l) = show l
     show (Var v) = "{" ++ v ++ "}"
     show (Abs a) = showAlt a
-    show (Ap e1 e2) = show e1 ++  "(" ++ show e2 ++ ")"
+    show (Ap e1 e2) = "(AP" ++ show e1 ++  " " ++ show e2 ++ ")"
     show (Case e as) =  "Case " ++ show e ++ " of" ++ indentedAlt as
     show (Annot e s) = show e ++ " : " ++ show s
     show (Let bg ex) = show "Let " ++ showBG bg ++ " in " ++ show ex

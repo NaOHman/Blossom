@@ -38,7 +38,7 @@ preprocess ts = do
         ce = M.unions [bhCE, overCE, recCE, fieldCE] 
         consBinds = constrBinds constructors
         impBinds = ceBinds overCE ++ ceBinds recCE ++ fbs ++ ceBinds fieldCE ++ consBinds ++ ceBinds bhCE
-        binds = impl' ++ expl' ++ overBinds bhCE
+        binds = impl' ++ expl' -- ++ overBinds bhCE
 
         aNames = concatMap dNames adt
         rNames = concatMap dNames rdt
@@ -49,12 +49,13 @@ preprocess ts = do
     fullAp (map dTCons adt ++ map dTCons rdt) binds
  
     {-mn <- genMain binds-}
-    let bg = splitBinds binds
-    return (ce, assumps, bg, impBinds)
+    let (es,is) = splitBinds binds
+    let eassumps = map (\(i,sc,_) -> i :>: sc) es
+    return (ce, assumps, (es,is), impBinds)
 
 bindingAssumps = map (\(Expl (i,s,_)) -> i :>: s) 
 constrBinds = map toBind 
-    where toBind (n, s) = Expl (n, s, Var ('+':n ++ "+"))
+    where toBind (n, s) = Expl (n, s, Var n)
 
 makeCstrAssumps = map (uncurry (:>:))
 
@@ -180,7 +181,7 @@ bindSup (bs,stubs) r@(Rec q t _ ss) = do
 
 fieldBinds (Rec q t _ fs) = zipWith f fs [0..]
     where f (n, ft) i = let sch = quantQual q ([ft] `mkFun` t)
-                        in (n, sch, Var ("#ACC" ++ show i))
+                        in (n, sch, Var ("#" ++ show i))
 
 
 filterInherits :: [Rec] -> PP ([(Rec,Rec)],[Rec])

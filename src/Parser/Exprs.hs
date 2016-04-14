@@ -35,12 +35,12 @@ lambda :: BParser (Alt, Maybe (Qual Type))
 lambda = do ((pat, mt), ex) <- exblock (,) args
             return ((pat, ex), mt)
 
-args :: BParser (Pat, Maybe (Qual Type))
+args :: BParser ([Pat], Maybe (Qual Type))
 args = do 
     (as,qts) <- unzip <$> parenCsl arg 
     rt <- opSufCons <* arrow'
     mt <- funcAnnot qts rt
-    let p = prod $ map PVar as
+    let p = map PVar as
     return (p, mt)
     where arg = (,) <$> lName <*> opSufCons
 
@@ -48,8 +48,10 @@ eAp = try regCall <|> subRef
     where subRef = do
                 ex <- noApExpr
                 (Var f) <- char '.' *> eVar
-                return $ Ap (Var ('_':f)) (prod [ex])
-          regCall = Ap <$> noApExpr <*> fArgs
+                return $ Ap (Var ('_':f)) ex
+          regCall = do fn <- noApExpr
+                       args <- fArgs
+                       return $ foldl Ap fn args
 
 eLet =  do i <- lName 
            sch <- opSufCons 
@@ -60,7 +62,7 @@ eLet =  do i <- lName
 
 eCase = block Case header branch
     where header = case_ *> expr <* of_
-          branch = exblock (,) (prod . (:[]) <$> (pat <* arrow'))
+          branch = exblock (,) ((:[]) <$> (pat <* arrow'))
    
 eAnnot = Annot <$> expr <*> (quantAll <$> sufCons)
 
@@ -70,7 +72,8 @@ pat  =  try (PCons <$> uName <*> (try (csl pat) <|> return []))
     <|> try (PVar  <$> lName)
     <|> try (symbol "_" >> return PNil)
 
-operators = [[uOp "+", uOp "-"],
+operators = [
+{-[uOp "+", uOp "-"],-}
          [bOp "*", bOp "/", bOp "//", bOp "%"],
          [bOp "+", bOp "-"],
          [bOp "==", bOp "<", bOp "<=", bOp ">", bOp ">="],
@@ -83,22 +86,22 @@ exblock f h = try (f <$> h <*> expr) <|> try (block f' h expr)
 
 chain [e] = e 
 chain (Let bg (Lit LNull):es) = Let bg (chain es)
-chain (e1:e2) = Ap (Var "!seq") (prod [e1, chain e2])
+chain (e1:e2) = Ap (Ap (Var "!seq") e1) (chain e2)
 
 uOp s = Prefix $ try $
     rword s *> notFollowedBy (symbol ">") *>
-       return (\e -> opAp (s++"UN") (prod [e]))
+       return (opAp (s++"UN"))
 
 bOp s = InfixL $ try $
     rword s *> notFollowedBy (symbol ">") *>
-        return (\e1 e2 -> opAp s (prod [e1, e2]))
+        return (\e1 e2 -> Ap (opAp s e1) e2)
 
 opAp s = Ap (Var s)
 
 argArrow = csl arg <* arrow'
     where arg = (,) <$> lName <*> opSufCons
 
-fArgs = prod <$> parenCsl expr
+fArgs = parenCsl expr
 
 eUnit = Lit LNull
 
@@ -109,8 +112,8 @@ funcAnnot ts Nothing
         rt <- newTVar Star
         funcAnnot ts (Just $ [] :=> rt)
 funcAnnot ts (Just rt) = do
-    args <- prod <$> toVars ts
-    return $ Just $ args `qualFn` rt
+    args <- toVars ts
+    return $ Just $ args `mkQualFn` rt
 
 newTVar :: Kind -> BParser Type
 newTVar k = do i <- get

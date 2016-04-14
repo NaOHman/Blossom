@@ -15,7 +15,10 @@ import qualified Data.Map as M
 tiExpr :: Infer Expr Type
 tiExpr ce as (Var i) =  lookupSc as i
 tiExpr ce as (Lit l) = tiLit l
-tiExpr ce as (Abs (p,e)) = tiAlt ce as (Just p, e)
+tiExpr ce as (Abs a) = do 
+    t <- newTVar Star
+    qs <- tiAlt ce as t a
+    return (qs, t)
 tiExpr ce as (Ap e1 e2) = do 
     (ps, t1) <- tiExpr ce as e1
     (qs, t2) <- tiExpr ce as e2 
@@ -28,12 +31,11 @@ tiExpr ce as (Let bg ex) = do (ps, as') <- tiBindGroup ce as (fixBG bg)
                               return (ps++qs, t)
 tiExpr ce as (Case e bs) = do 
     (ps, te) <- tiExpr ce as e
-    pt <- newTVar Star
+    bt <- newTVar Star
     rt <- newTVar Star
-    let alts = map (first Just) bs 
-    qs <- tiAlts ce as alts pt
+    qs <- tiAlts ce as bs bt
     let err = "CASE" ++ show (Case e bs)
-    unify err pt ([te] `mkFun` rt)
+    unify err bt (te `func` rt)
     return (ps ++ qs, rt) 
 
 tiExprs ce as ts = do res <- mapM (tiExpr ce as) ts
@@ -84,7 +86,7 @@ tiPat' ass (PCons i pats) = do
     (qs :=> t) <- freshInst sc
     let err = "TI Pat " ++ show (PCons i pats)
     {-fail $ show t ++ ", " ++ show ts ++ ", " ++ show rt-}
-    unify err t (altType ts rt)
+    unify err t (foldr func rt ts)
     {-unify err t (ts `mkFun` rt )-}
     return (ps ++ qs, as, rt)
 
@@ -95,22 +97,21 @@ tiPats ass ps = do ppat <- mapM (tiPat' ass) ps
                        ts = [t | (_,_,t) <- ppat]
                    return (ps, as, ts)
 
-altType tp te = if null tp then te else tp `mkFun` te
-
-tiAlt :: Infer TAlt Type
-tiAlt ce as (Just p, e) = do (ps, as', tp) <- tiPat as p
-                             (qs, te) <- tiExpr ce (as' ++ as) e
-                             return (ps ++ qs, tp `func` te)
-tiAlt ce as (_,e) = tiExpr ce as e
+{-tiAlt :: Infer TAlt Type-}
+tiAlt ce as t (p, e) = do (ps, as', tp) <- tiPats as p
+                          (qs, te) <- tiExpr ce (as' ++ as) e
+                          let err = "TIAlt :" ++ show p ++" :: " ++ show tp ++ ", " ++ show e ++ " :: " ++ show te
+                          unify err t (tp `mkFun` te)
+                          return (ps ++ qs)
                            {-if null tp then -}
                                {-return (ps ++ qs, te)-}
                              {-else-}
                                {-return (ps ++ qs, tp `mkFun` te)-}
 
-tiAlts ce as alts t = do psts <- mapM (tiAlt ce as) alts
-                         let err = "TIAlts " ++ show alts
-                         mapM_ (unify err t . snd) psts
-                         return (concatMap fst psts)
+tiAlts ce as alts t = concat <$> mapM (tiAlt ce as t) alts
+                         {-let err = "TIAlts " ++ show alts-}
+                         {-mapM_ (unify err t . snd) psts-}
+                         {-return (concatMap fst psts)-}
 
 split :: Monad m => ClassEnv -> [Tyvar] -> [Tyvar] -> [Pred] -> m ([Pred], [Pred])
 split ce fs gs ps = do 
@@ -126,9 +127,9 @@ ambiguities :: [Tyvar] -> [Pred] -> [Ambiguity]
 ambiguities vs ps = [(v, filter(elem v . tv) ps) | v <- tv ps \\ vs ]
 
 tiExpl :: ClassEnv -> [Assump] -> TExpl -> TI [Pred]
-tiExpl ce as (i, sc, alts) = do 
+tiExpl ce as (i, sc, alt) = do 
     (qs :=> t) <- freshInst sc
-    (ps,_)     <- tiAlt ce as alts
+    ps         <- tiAlt ce as t alt
     s          <- getSubst
     let qs'     = apply s qs
         t'      = apply s t
@@ -146,18 +147,18 @@ tiExpl ce as (i, sc, alts) = do
 
 restricted :: [TImpl] -> Bool
 restricted = any simple 
-    where simple (i,(Nothing,e)) = True
+    where simple (i,([],e)) = True
           simple _ = False
 
 
 tiImpls :: Infer [TImpl] [Assump]
 tiImpls ce as bs = do 
     ts <- mapM (\_ -> newTVar Star) bs
-    let is    = map fst bs
-        scs   = map toScheme ts
-        as'   = zipWith (:>:) is scs ++ as
-        altss = map snd bs
-    pss <- mapM (fmap fst . tiAlt ce as') altss
+    let is    = map fst bs --names of bindings
+        scs   = map toScheme ts --empty schemes
+        as'   = zipWith (:>:) is scs ++ as -- assume each binding
+        altss = map snd bs -- get the expression for the bindings
+    pss <- zipWithM (tiAlt ce as') ts altss
     s   <- getSubst
     let ps'     = apply s (concat pss)
         ts'     = apply s ts
@@ -187,6 +188,17 @@ tiSeq ti ce as (bs:bss) = do
     (qs,as'') <- tiSeq ti ce (as'++as) bss
     return (ps++qs, as''++as')
 
+tryPat as p = runTI $ do
+    (_,as,t) <- tiPat as p
+    s <- getSubst
+    return (apply s as, apply s t)
+
+tryPats as ps = runTI $ do
+    (_,as,t) <- tiPats as ps
+    s <- getSubst
+    return (apply s as, apply s t)
+   
+
 tiProgram :: ClassEnv -> [Assump] -> [BG] -> [Assump]
 tiProgram ce as bgs = runTI $ do
     (ps, as') <- tiSeq tiBindGroup ce as bgs
@@ -198,17 +210,17 @@ tiProgram ce as bgs = runTI $ do
 
 newtype TI a = TI (Subst -> Int -> (Subst, Int, a))
 
-type TAlt = (Maybe Pat, Expr)
+type TAlt = ([Pat], Expr)
 type TImpl = (Id, TAlt)
 type TExpl = (Id, Scheme, TAlt)
 type BG = ([TExpl], [[TImpl]])
 
 fixBG :: BindGroup -> BG
 fixBG (es, is) = (map fixEs es, [map fixIs is])
-    where fixEs ((i,s, Abs (p, e))) = (i,s,(Just p, e))
-          fixEs ((i,s, e)) = (i,s,(Nothing, e))
-          fixIs ((i, Abs (p,e))) = (i,(Just p, e))
-          fixIs ((i, e)) = (i,(Nothing, e))
+    where fixEs ((i,s, Abs (p, e))) = (i,s,(p, e))
+          fixEs ((i,s, e)) = (i,s,([], e))
+          fixIs ((i, Abs (p,e))) = (i,(p, e))
+          fixIs ((i, e)) = (i,([], e))
 
 instance Monad TI where
     return x = TI (\s n -> (s, n, x))

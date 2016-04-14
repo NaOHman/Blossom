@@ -40,8 +40,8 @@ mgu a (TAp l r) (TAp l' r') = do
     s1 <- mgu a l l'
     s2 <- mgu a (apply s1 r) (apply s1 r') 
     return (s2 @@ s1)
-mgu a (TVar u) t = varBind u t
-mgu a t (TVar u) = varBind u t
+mgu a (TVar u) t = varBind a u t
+mgu a t (TVar u) = varBind a u t
 mgu a (TCons t1) (TCons t2) 
     | t1 == t2 = return nullSubst
 mgu e a b = fail $  "Types could not be unified " ++ show a ++ ", "++ show b ++ " In expresssion: " ++ show e
@@ -49,10 +49,10 @@ mgu e a b = fail $  "Types could not be unified " ++ show a ++ ", "++ show b ++ 
 mguPred :: Monad m => Pred -> Pred -> m Subst
 mguPred = liftPred (mgu "Pred")
 
-varBind :: Monad m => Tyvar -> Type -> m Subst
-varBind u@(Tyvar i _) t | t == TVar u = return nullSubst
-            | u `elem` tv t = fail $ i ++ " Occurs check failed"
-            | kind u /= kind t = fail $ "Kinds do not match " ++ show u ++ " " ++ show t
+varBind :: (Monad m, Show a) => a -> Tyvar -> Type -> m Subst
+varBind a u@(Tyvar i _) t | t == TVar u = return nullSubst
+            | u `elem` tv t = fail $ i ++ " Occurs check failed" ++ show a
+            | kind u /= kind t = fail $ "Kinds do not match " ++ show u ++ " " ++ show t ++ " " ++ show a
             | otherwise = return (u +-> t)
 
 match :: Monad m => Type -> Type -> m Subst
@@ -182,7 +182,8 @@ tcons n k = TCons (Tycon n k)
 assume :: [Tyvar] -> Id -> Type -> Assump
 assume tv id t = id :>: quantify tv ([] :=> t)
 
-mkFun ts t = prod ts `func` t
+mkFun ts t = foldr func t ts
+mkQualFn qts qt = foldr qualFn qt qts
 qualFn (q1 :=> t1) (q2 :=> t2) = (q1 ++ q2) :=> (t1 `func` t2)
 
 mkCons n k = TCons $ Tycon n k
