@@ -51,6 +51,7 @@ fDec = try inline <|> try blk
               q <- topQual
               n <- fun' *> lName
               (p, mqt) <- args
+              {-p' = scrubZeroProd p-}
               return (p, case mqt of
                   Just (qs :=> t) -> 
                       let sch = quantUser ((q ++ qs) :=> t)
@@ -67,7 +68,9 @@ rdt = RDT <$> block ($) header field
                       t <- data_ *> vCons
                       ss <- superTypes <* where_
                       return (Rec q t ss)
-          field = (,) <$> (dot' *> lName) <*> (colon' *> ptype)
+          field = do fname <- dot'  *> lName
+                     t <- colon' *> ptype
+                     return ('_':fname, t)
           superTypes = opList (inherits *> sepBy1 vCons comma')
 
 behavior = Bvr <$> block ($) header stub 

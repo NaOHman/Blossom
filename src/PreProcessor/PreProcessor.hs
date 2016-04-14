@@ -11,7 +11,7 @@ import Control.Monad.Trans.Either
 import Control.Monad.State
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
-import Data.List (find, sort)
+import Data.List (find, sort, delete)
 import Data.Maybe (isJust)
 import GHC.Exts (groupWith)
 import Text.Megaparsec.Pos
@@ -20,32 +20,55 @@ type PP a = State Int a
 
 validate ts = evalState (preprocess ts) 0
 
-preprocess :: [Top] -> PP (ClassEnv, [Assump], Expr)
+preprocess :: [Top] -> PP (ClassEnv, [Assump], BindGroup, [Binding])
 preprocess ts = do
     let (bnds, rdt, adt, bvs, imps) = splitTops ts
-    (fbs, recCE) <- processRecs rdt
-    let (expl,impl) = splitBinds (bnds ++ fbs)
+    (fbs', recCE) <- processRecs rdt
+    (fbs, fieldCE) <- overload fbs'
+
+    let (expl,impl) = splitBinds bnds
     (expl', overCE) <- overload expl
     bhCE <- makeCE bvs imps
 
-    let aAssumps = map (uncurry (:>:)) (concatMap dCstrs adt)
-        rAssumps = map (uncurry (:>:)) (concatMap dCstrs rdt)
-        assumps = rAssumps ++ aAssumps
+    let constructors = concatMap dCstrs adt ++ concatMap dCstrs rdt 
+        fassumps = bindingAssumps (fbs ++ ceBinds fieldCE ++ ceBinds recCE ++ ceBinds bhCE)
+        assumps = makeCstrAssumps constructors ++ fassumps
 
         impl' = map Impl impl
-        ce = M.unions [bhCE, overCE, recCE] 
-        binds = impl' ++ expl' ++ ceBinds ce
+        ce = M.unions [bhCE, overCE, recCE, fieldCE] 
+        consBinds = constrBinds constructors
+        impBinds = ceBinds overCE ++ ceBinds recCE ++ fbs ++ ceBinds fieldCE ++ consBinds ++ ceBinds bhCE
+        binds = impl' ++ expl' ++ overBinds bhCE
 
         aNames = concatMap dNames adt
         rNames = concatMap dNames rdt
         bNames = behaviorNames ce
-        nNames = map bindingName binds
+        nNames = map bindingName (binds ++ impBinds)
         names = aNames ++ rNames ++ bNames ++ nNames
     unless (uniq names) (fail "Duplicate name found")
     fullAp (map dTCons adt ++ map dTCons rdt) binds
  
-    mn <- genMain binds
-    return (ce, assumps, mn)
+    {-mn <- genMain binds-}
+    let bg = splitBinds binds
+    return (ce, assumps, bg, impBinds)
+
+bindingAssumps = map (\(Expl (i,s,_)) -> i :>: s) 
+constrBinds = map toBind 
+    where toBind (n, s) = Expl (n, s, Var ('+':n ++ "+"))
+
+makeCstrAssumps = map (uncurry (:>:))
+
+overBinds :: ClassEnv -> [Binding]
+overBinds = concatMap unpack . getOvers
+
+getOvers :: ClassEnv -> [OBind]
+getOvers = concatMap (\(_,_,os) -> os) . M.elems
+
+unpack :: OBind -> [Binding]
+unpack (OBind i fn (Over ps)) = map bnd ps
+    where bnd (qt, ex) = 
+                let name = "$" ++ i ++ "[" ++ show qt ++ "]"
+                in Expl (name, quantAll qt, ex)
 
 ceBinds :: ClassEnv -> [Binding]
 ceBinds = M.foldMapWithKey f 
@@ -78,7 +101,7 @@ addImp ce (Im q t i ss) = do
        sns = map obName stbs
    unless (sort bns == sort sns) 
           (fail $ "Must implement stubs defined by " ++ i)
-   let stbs' = foldl (addStub q t) stbs ss
+   let stbs' = foldl (addStub q (TCons $  getCons t)) stbs ss
    return (M.insert i (sc,inst:is, stbs') ce)
 
 addStub :: [Pred] -> Type -> [OBind] -> (Id, Expr) -> [OBind] 
@@ -106,12 +129,11 @@ toCB (Bhvr q t n stbs) bs = do
 bhVar (TAp t _) = bhVar t
 bhVar (TVar tv) = tv
 
-processRecs :: [Rec] -> PP ([Binding], ClassEnv)
+processRecs :: [Rec] -> PP ([Expl], ClassEnv)
 processRecs rs = do
     --break into inherited/noninherited datatypes
     (inhPairs, regs) <-  filterInherits rs
-    -- generate bindings for regular classes
-    let rfBind = map Expl $ concatMap fieldBinds regs
+    let rfBind = concatMap fieldBinds regs
          
         --group inheritance pairs into classes
         classes = groupWith (tname . dTCons . fst) inhPairs
@@ -120,7 +142,7 @@ processRecs rs = do
     (bs, cbs) <- unzip <$> mapM promote classes
     return (rfBind ++ concat bs, M.fromList cbs)
 
-promote :: [(Rec,Rec)] -> PP ([Binding],(Id,Class))
+promote :: [(Rec,Rec)] -> PP ([Expl],(Id,Class))
 promote rs@((sup,_):_) = do
     -- All the classes that inherit from a type
     let imps = sup : map snd rs
@@ -143,7 +165,7 @@ makeSuperClass s@(Rec q t ss fs) impl =
 
 -- Return the list of overloaded field bindings and the
 -- list of type-specific bindings
-bindSup :: ([Binding],[OBind]) -> Rec -> PP ([Binding], [OBind])
+bindSup :: ([Expl],[OBind]) -> Rec -> PP ([Expl], [OBind])
 bindSup (bs,stubs) r@(Rec q t _ ss) = do 
     let fbs = fieldBinds r
         (over,under) = split inStubs fbs
@@ -153,7 +175,7 @@ bindSup (bs,stubs) r@(Rec q t _ ss) = do
            (fail "Must include all fields of super type")
     let stbs = foldl (addStub q t) stubs obs
     {-return stbs-}
-    return (map Expl under ++ bs, stbs)
+    return (under ++ bs, stbs)
     where inStubs (b,s,_) = isJust (find (\a -> obName a == b) stubs)
 
 fieldBinds (Rec q t _ fs) = zipWith f fs [0..]
@@ -163,7 +185,9 @@ fieldBinds (Rec q t _ fs) = zipWith f fs [0..]
 
 filterInherits :: [Rec] -> PP ([(Rec,Rec)],[Rec])
 filterInherits rs = do (a,b,_) <- foldM f ([],[],[]) rs
-                       return (a,b)
+                       let sups = map fst a
+                           regs = [x | x <- b, x `notElem` sups]
+                       return (a,regs)
     where f (is,ns,rs) r = if null (sups r)
               then return (is, r:ns, r:rs)
               else do impls <- mapM (findSup r rs) (sups r)

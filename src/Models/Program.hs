@@ -39,7 +39,7 @@ data Rec = Rec
     , rtycon :: Type
     , sups :: [Type]
     , rfields :: [(Id, Type)]
-    } deriving Show
+    } deriving (Show, Eq)
 
 -- Type is Id when stubs
 data Behavior = Bhvr [Pred] Type Id [(Id, Type)]

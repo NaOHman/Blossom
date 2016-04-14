@@ -35,24 +35,24 @@ merge s1 s2 = if agree
     where agree = all p (map fst s1 `intersect` map fst s2)
           p v = apply s1 (TVar v) == apply s2 (TVar v)
 
-mgu :: Monad m => Type -> Type -> m Subst
-mgu (TAp l r) (TAp l' r') = do
-    s1 <- mgu l l'
-    s2 <- mgu (apply s1 r) (apply s1 r') 
+mgu :: (Monad m, Show a) => a -> Type -> Type -> m Subst
+mgu a (TAp l r) (TAp l' r') = do
+    s1 <- mgu a l l'
+    s2 <- mgu a (apply s1 r) (apply s1 r') 
     return (s2 @@ s1)
-mgu (TVar u) t = varBind u t
-mgu t (TVar u) = varBind u t
-mgu (TCons t1) (TCons t2) 
+mgu a (TVar u) t = varBind u t
+mgu a t (TVar u) = varBind u t
+mgu a (TCons t1) (TCons t2) 
     | t1 == t2 = return nullSubst
-mgu a b = fail $  "Types could not be unified " ++ show a ++ ", "++ show b
+mgu e a b = fail $  "Types could not be unified " ++ show a ++ ", "++ show b ++ " In expresssion: " ++ show e
 
 mguPred :: Monad m => Pred -> Pred -> m Subst
-mguPred = liftPred mgu
+mguPred = liftPred (mgu "Pred")
 
 varBind :: Monad m => Tyvar -> Type -> m Subst
 varBind u@(Tyvar i _) t | t == TVar u = return nullSubst
             | u `elem` tv t = fail $ i ++ " Occurs check failed"
-            | kind u /= kind t = fail "Kinds do not match"
+            | kind u /= kind t = fail $ "Kinds do not match " ++ show u ++ " " ++ show t
             | otherwise = return (u +-> t)
 
 match :: Monad m => Type -> Type -> m Subst
@@ -75,23 +75,56 @@ liftPred m (IsIn i ts) (IsIn i' ts')
 
 subUnion = foldl (@@) nullSubst
 
+
+
 bySuper :: ClassEnv -> Pred -> [Pred]
-bySuper ce p@(IsIn i t) = 
-    p : concat [bySuper ce (IsIn i' t) | i' <- super ce i]
+bySuper ce p@(IsIn i t) = p : concat [bySuper ce (IsIn i' t) | i' <- super ce i]
 
 byInst :: ClassEnv -> Pred -> Maybe [Pred]
 byInst ce p@(IsIn i t) = msum [tryInst it | it <- insts ce i]
-    where tryInst (ps:=>h) = do u <- matchPred h p
-                                Just (map (apply u) ps)
+    where tryInst (ps :=> h) = do u <- matchPred h p
+                                  Just (map (apply u) ps)
 
---does a list of predicates imply this predicate?
 entail :: ClassEnv -> [Pred] -> Pred -> Bool
-entail ce ps p = scEntail ce ps p || case byInst ce p of
-                          Nothing -> False
-                          Just qs -> all (entail ce ps) qs
+entail ce ps p = any (p `elem`) (map (bySuper ce) ps) ||
+    case byInst ce p of
+        Nothing -> False
+        Just qs -> all (entail ce ps) qs
+
+simplify   :: ClassEnv -> [Pred] -> [Pred]
+simplify ce = loop []
+    where loop rs [] = rs
+          loop rs (p:ps) | entail ce (rs++ps) p = loop rs ps
+                         | otherwise = loop (p:rs) ps
+
+reduce :: Monad m => ClassEnv -> [Pred] -> m [Pred]
+reduce ce ps = do qs <- toHnfs ce ps
+                  return (simplify ce qs)
+
+elimTauts :: ClassEnv -> [Pred] -> [Pred]
+elimTauts ce ps = [ p | p <- ps, not (entail ce [] p) ]
 
 scEntail :: ClassEnv -> [Pred] -> Pred -> Bool
 scEntail ce ps p = any (p `elem`) (map (bySuper ce) ps)
+
+
+{-bySuper :: ClassEnv -> Pred -> [Pred]-}
+{-bySuper ce p@(IsIn i t) = -}
+    {-p : concat [bySuper ce (IsIn i' t) | i' <- super ce i]-}
+
+{-byInst :: ClassEnv -> Pred -> Maybe [Pred]-}
+{-byInst ce p@(IsIn i t) = msum [tryInst it | it <- insts ce i]-}
+    {-where tryInst (ps:=>h) = do u <- matchPred h p-}
+                                {-Just (map (apply u) ps)-}
+
+--does a list of predicates imply this predicate?
+{-entail :: ClassEnv -> [Pred] -> Pred -> Bool-}
+{-entail ce ps p = scEntail ce ps p || case byInst ce p of-}
+                          {-Nothing -> False-}
+                          {-Just qs -> all (entail ce ps) qs-}
+
+{-scEntail :: ClassEnv -> [Pred] -> Pred -> Bool-}
+{-scEntail ce ps p = any (p `elem`) (map (bySuper ce) ps)-}
 
 --context reduction garbage
 isInHnf :: Pred -> Bool
@@ -107,22 +140,9 @@ toHnfs ce ps = do pss <- mapM (toHnf ce) ps
 toHnf :: Monad m => ClassEnv -> Pred -> m [Pred]
 toHnf ce p | isInHnf p = return [p]
            | otherwise = case byInst ce p of
-                            Nothing -> fail "Context reduction failed"
+                            Nothing -> fail $ "Context reduction failed " ++show p
                             Just ps -> toHnfs ce ps
-
--- takes a list of predicates and removes all unnecessary ones
--- note that this isn't quite a fold
-simplify :: ClassEnv -> [Pred] -> [Pred]
-simplify ce = loop []
-    where loop rs [] = rs 
-          loop rs (p:ps) | entail ce (rs ++ ps) p = loop rs ps
-                         | otherwise = loop (p:rs) ps
-
--- put a context into the simplest form
-reduceCtx :: Monad m => ClassEnv -> [Pred] -> m [Pred]
-reduceCtx ce ps = do qs <- toHnfs ce ps
-                     return (simplify ce qs)
-            
+           
 quantQual :: [Pred] -> Type -> Scheme
 quantQual ps t = quantify (tv t) (ps :=> t)
 
@@ -159,11 +179,6 @@ tList = TCons (Tycon "[]" (KFun Star Star))
 tArrow = TCons (Tycon "->" (KFun Star (KFun Star Star)))
 tcons n k = TCons (Tycon n k)
 
-{-tProduct :: [Type] -> Type-}
-{-tProduct ps = foldl TAp (TCons $ Tycon name (kAry len)) ps-}
-    {-where name = show len ++ "PROD"-}
-          {-len = length ps-}
-
 assume :: [Tyvar] -> Id -> Type -> Assump
 assume tv id t = id :>: quantify tv ([] :=> t)
 
@@ -183,7 +198,8 @@ instance Data Adt where
                               cNames = map fst cs
                           in n : cNames
     dCstrs (Adt q t cs) = map toCstr cs
-         where toCstr (n,ts) = (n, quantQual q $ ts `mkFun` t)
+         where toCstr (n,[]) = (n, quantQual q t)
+               toCstr (n,ts) = (n, quantQual q $ ts `mkFun` t)
 
 getCons (TCons t) = t
 getCons (TAp t _) = getCons t
@@ -196,6 +212,8 @@ instance Data Rec where
     dCstrs (Rec q t _ fs) = 
         let (Tycon n _) = getCons t
             ts = map snd fs
-        in [(n, quantQual q $ ts `mkFun` t)]
+            ft = if null ts then t else ts `mkFun` t
+                
+        in [(n, quantQual q ft)]
 
 

@@ -20,15 +20,24 @@ main = do
         Left err -> print err
         Right tops -> do
            mapM_ print tops
-           putStrLn "Parse Successful!"
-           let (ce, as, ex) = validate tops
+           let (ce', as, (es,is), bs) = validate tops
+               ce = ce' `M.union` classes
            putStrLn "Assumptions:"
            mapM_ print as
-           putStrLn "Main:"
-           print ex
-           putStrLn "ClassEnv:"
-           print ce
+           {-putStrLn "Builtin bindings:"-}
+           {-mapM_ print bs-}
+           putStrLn "Explicit Binds:"
+           mapM_ print es
+           putStrLn "Implicit Binds:"
+           mapM_ print is
+           {-putStrLn "ClassEnv:"-}
+           {-print ce-}
            putStrLn "Passed PreProcessor"
+           let assumps = zeroProd:printAs:sqAssump : as ++ prodAssumps ++ defaultAssumps
+           {-mapM_ print assumps-}
+           let bg = fixBG (es,is)
+               as' = tiProgram ce assumps [bg]
+           mapM_ print as'
 
            {-print bs-}
            {-mapM_ print (as ++ defaultAssumps)-}
@@ -60,6 +69,31 @@ parseArgs (f:as) = (False, f, as)
     {-[>where getGbls = fromList . map f <]-}
           {-[>f (Expr _ (EFix n a e)) = (n, VLambda a e)<]-}
           {-[>f (Expr _ (ELet (DName n) (Expr _ (ELit l)))) = (n, lit2Val l)<]-}
+
+prodAssumps = map makePA [1..10]
+makePA n = name :>: Forall stars ([] :=> t) 
+    where tc = TCons $ Tycon name (kAry n)
+          rt = foldl TAp tc gens
+          t = foldr func rt gens
+          gens = map TGen [0..n-1]
+          name = show n ++ "PROD"
+          stars = replicate n Star
+
+sqAssump = "!seq" :>: Forall [Star, Star] ([] :=> ([TGen 0,TGen 1] `mkFun` TGen 1))
+zeroProd = "0PROD" :>: Forall [] ([] :=> (TCons $ Tycon "0PROD" Star))
+printAs = "print" :>: Forall [Star] ([IsIn "Showable" [TGen 0]] :=> (TGen 0 `func` tNull))
+
+classes = M.fromList $ map mkCls 
+    [("Eq", [], [tInt, tChar, tFloat, tBool])
+    ,("Showable", [], [tInt, tChar, tFloat, tBool])
+    ,("Ord", ["Eq"], [tInt, tChar, tFloat])
+    ,("Num", ["Eq","Show"], [tInt, tFloat])
+    ,("Real", ["Num","Ord"], [tInt, tFloat])
+    ,("Fractional", ["Num"], [tFloat])
+    ,("Floating", ["Fractional"], [tFloat])]
+mkCls (id,ss,is) = (id,(ss, insts, stubs))
+    where insts = map (\t -> [] :=> IsIn id [t]) is
+          stubs = []
 
 defaultAssumps :: [Assump]
 defaultAssumps = map toAsmp [

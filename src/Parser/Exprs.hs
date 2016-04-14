@@ -47,8 +47,8 @@ args = do
 eAp = try regCall <|> subRef
     where subRef = do
                 ex <- noApExpr
-                field <- char '.' *> eVar
-                return $ Ap field (prod [ex])
+                (Var f) <- char '.' *> eVar
+                return $ Ap (Var ('_':f)) (prod [ex])
           regCall = Ap <$> noApExpr <*> fArgs
 
 eLet =  do i <- lName 
@@ -60,7 +60,7 @@ eLet =  do i <- lName
 
 eCase = block Case header branch
     where header = case_ *> expr <* of_
-          branch = exblock (,) (pat <* arrow')
+          branch = exblock (,) (prod . (:[]) <$> (pat <* arrow'))
    
 eAnnot = Annot <$> expr <*> (quantAll <$> sufCons)
 
@@ -81,9 +81,9 @@ exblock ::  (a -> Expr -> b) -> BParser a -> BParser b
 exblock f h = try (f <$> h <*> expr) <|> try (block f' h expr)
     where f' d es = f d (chain es)
 
-chain = foldl1 chain'
-    where chain' (Let bg (Lit LNull)) e2 = Let bg e2
-          chain' e1 e2 = Ap (Var "!seq") (prod [e1, e2])
+chain [e] = e 
+chain (Let bg (Lit LNull):es) = Let bg (chain es)
+chain (e1:e2) = Ap (Var "!seq") (prod [e1, chain e2])
 
 uOp s = Prefix $ try $
     rword s *> notFollowedBy (symbol ">") *>
