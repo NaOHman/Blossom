@@ -12,7 +12,8 @@ import Control.Arrow (second)
 import Data.List (intercalate, isSuffixOf, unionBy)
 import Data.Char (isUpper)
 
-type MEval a = IO a
+type MEval a = StateT Bool IO a
+
 data Value = VInt Integer
            | VFloat Double
            | VBool Bool
@@ -38,16 +39,17 @@ data Scope = Scope [(Id, Value)]
 add (Scope b1) (Scope b2) = Scope (unionBy f b1  b2)
     where f (i,_) (i2,_) = i == i2
 
-interpretBlossom :: [(Id, Expr)] -> IO ()
-interpretBlossom bs = do 
+interpretBlossom ::  [(Id, Expr)] -> Bool -> IO ()
+interpretBlossom bs = evalStateT (runProg bs)
+
+runProg bs =  do 
     vs <- mapM (\(id,ex) -> eval defScope ex) bs
     let sc = Scope $ zip (map fst bs) vs
         (Just (VLambda _ mn)) = lookupScope "main" sc
     void $ eval (sc `add` defScope) mn
 
 lookupScope :: Id -> Scope -> Maybe Value
-{-lookupScope ('$':i) _ = Just $ BuiltIn 1 (\(VCons _ vs) -> return $ VCons i vs)-}
-lookupScope ('#':i) _ = Just $ BuiltIn "Access" 1 (\([VCons _ vs]) -> return (vs !! read i))
+lookupScope ('#':i) _ = Just $ BuiltIn "Access" 1 (\[VCons _ vs] -> return (vs !! read i))
 lookupScope i@(c:_) (Scope sc) 
     | isUpper c = Just $ VCons i []
     | otherwise = lookup i sc
@@ -62,49 +64,49 @@ letBinds s (es,is) = do es <-  mapM bindEx es
 
 eval :: Scope -> Expr -> MEval Value
 eval s (Lit l) = do
-    {-print "Eval lit"-}
+    dprint "Eval lit"
     return $ lit2Val l
 
 eval s (Var i) = do
-    {-print $ "look up " ++ i-}
+    dprint $ "look up " ++ i
     case lookupScope i s of 
         Nothing -> fail $ "Variable " ++ i ++ " is ubound"
         Just v -> return v
         
 eval s (Abs (p,e)) =  do
-    {-print $ "Eval lambda " ++ show p ++ " -> " ++ show e-}
+    dprint $ "Eval lambda " ++ show p ++ " -> " ++ show e
     return (VLambda p e)
 
 eval s (Let bg e) = do
-    {-print $ "Eval let " ++ show bg ++ " in " ++ show e-}
+    dprint $ "Eval let " ++ show bg ++ " in " ++ show e
     bs <- letBinds s bg
     eval (bs `add` s) e
 
 eval s (Case e cs) = do
-    {-print $ "Eval case " ++ show e ++ " of " ++ show cs-}
+    dprint $ "Eval case " ++ show e ++ " of " ++ show cs
     v <- eval s e
     pickCase v cs
     where pickCase val [] = fail "Couldn't match pattern" --TODO Return a fail value
           pickCase v (([p],e):cs) = do
-              {-print p-}
-              {-print v-}
+              dprint (show p)
+              dprint (show v)
               case match p v of
                 Just bs -> eval (bs `add` s) e
-                otherwise -> pickCase v cs
+                _ -> pickCase v cs
 
 eval s (Annot e _) = eval s e
 
 eval s (Over ps) = return VNull
 
 eval s (Ap e1 e2) = do
-    {-print $ "begin ap eval " ++ show e1 ++ " `ap` " ++ show e2-}
+    dprint $ "begin ap eval " ++ show e1 ++ " `ap` " ++ show e2
     evalAp s e1 [e2] 
 
 evalAp s (Ap e1 e2) es = do
-    {-print $ "two for one"-}
+    dprint $ "two for one"
     evalAp s e1 (e2:es)
 evalAp s f es  = do
-    {-print $ "eval " ++ show f ++ " `ap` " ++ show es-}
+    dprint $ "eval " ++ show f ++ " `ap` " ++ show es
     args <- mapM (eval s) es
     fn <- eval s f
     case fn of
@@ -115,11 +117,14 @@ evalAp s f es  = do
             let (Just sc) = matches ps args
             eval (sc `add` s) e
         (BuiltIn n i fn) -> if length args == i 
-            then fn args
+            then liftIO (fn args)
             else fail $ "Builtin: " ++ n ++ " applied to wrong number of arguments " ++ show es
         (VCons n _) -> return $ VCons n args
         a -> fail $ "Fail something went horribly wrong " ++ show a
 
+dprint :: String -> MEval()
+dprint msg = do debug <- get
+                when debug $ liftIO (putStrLn msg)
 
 catScope :: [Scope] -> Scope
 catScope = Scope . concatMap (\(Scope s) -> s) 
@@ -149,7 +154,7 @@ lit2Val LNull = VNull
 veq (VInt i) (VInt i') = i == i'
 veq (VFloat f) (VFloat f') = f == f'
 veq (VChar c) (VChar c') = c == c'
-veq (VNull) (VNull) = True
+veq VNull VNull = True
 veq _ _ = False
 
 defScope = Scope $ map (\(n,i,b) -> (i, BuiltIn i n b))
@@ -170,54 +175,49 @@ defScope = Scope $ map (\(n,i,b) -> (i, BuiltIn i n b))
   ,(1, "print",  bprint)
   ]
 
-bseq ([a, b]) = return b
+bseq [a, b] = return b
 
-bprint ([VInt a]) = print a >> return VNull
-bprint ([VFloat a]) = print a >> return VNull
-bprint ([VChar a]) = print a >> return VNull
-bprint ([VBool a]) = print a >> return VNull
-bprint ([VCons n vs]) = print n >> mapM (bprint . (:[])) vs >> return VNull
+bprint [VInt a] = print a >> return VNull
+bprint [VFloat a] = print a >> return VNull
+bprint [VChar a] = print a >> return VNull
+bprint [VBool a] = print a >> return VNull
+bprint [VCons n vs] = print n >> mapM (bprint . (:[])) vs >> return VNull
 bprint _ = fail "unprintable value"
 
-{-bprint (VInt i) = print i >> return VNull-}
-{-bprint (VFloat i) = print i >> return VNull-}
-{-bprint (VChar i) = print i >> return VNull-}
-{-bprint (VBool i) = print i >> return VNull-}
+buplus [a] = return a
 
-buplus ([a]) = return a
+bneg [VFloat a] = return . VFloat $ negate a
+bneg [VInt a] = return . VInt $ negate a
 
-bneg ([VFloat a]) = return . VFloat $ negate a
-bneg ([VInt a]) = return . VInt $ negate a
+bplus [VInt a, VInt b] = return . VInt $ a + b
+bplus [VFloat a, VFloat b] = return . VFloat $ a + b
 
-bplus ([VInt a, VInt b]) = return . VInt $ a + b
-bplus ([VFloat a, VFloat b]) = return . VFloat $ a + b
+bminus [VInt a, VInt b] = return . VInt $ a - b
+bminus [VFloat a, VFloat b] = return . VFloat $ a - b
 
-bminus ([VInt a, VInt b]) = return . VInt $ a - b
-bminus ([VFloat a, VFloat b]) = return . VFloat $ a - b
+bmult [VInt a, VInt b] = return . VInt  $ a * b
+bmult [VFloat a, VFloat b] = return . VFloat $ a * b
 
-bmult ([VInt a, VInt b]) = return . VInt  $ a * b
-bmult ([VFloat a, VFloat b]) = return . VFloat $ a * b
+bdiv [VFloat a, VFloat b] = return . VFloat $ a / b
+bquot [VInt a, VInt b] = return . VInt  $ a `quot` b
+bmod [VInt a, VInt b] = return . VInt  $ a `mod` b
 
-bdiv ([VFloat a, VFloat b]) = return . VFloat $ a / b
-bquot ([VInt a, VInt b]) = return . VInt  $ a `quot` b
-bmod ([VInt a, VInt b]) = return . VInt  $ a `mod` b
+bge [VInt a, VInt b] = return . VBool  $ a > b
+bge [VFloat a, VFloat b] = return . VBool $ a > b
+bge [VChar a, VChar b] = return . VBool $ a > b
 
-bge ( [VInt a, VInt b]) = return . VBool  $ a > b
-bge ([VFloat a, VFloat b]) = return . VBool $ a > b
-bge ([VChar a, VChar b]) = return . VBool $ a > b
+ble [VInt a, VInt b] = return . VBool $ a < b
+ble [VFloat a, VFloat b] = return . VBool $ a < b
+ble [VChar a, VChar b] = return . VBool $ a < b
 
-ble ([VInt a, VInt b]) = return . VBool $ a < b
-ble ([VFloat a, VFloat b]) = return . VBool $ a < b
-ble ([VChar a, VChar b]) = return . VBool $ a < b
+bgeq [VInt a, VInt b] = return  . VBool $ a >= b
+bgeq [VFloat a, VFloat b] = return . VBool $ a >= b
+bgeq [VChar a, VChar b] = return . VBool $ a >= b
 
-bgeq ([VInt a, VInt b]) = return  . VBool $ a >= b
-bgeq ([VFloat a, VFloat b]) = return . VBool $ a >= b
-bgeq ([VChar a, VChar b]) = return . VBool $ a >= b
+bleq [VInt a, VInt b] = return . VBool  $ a <= b
+bleq [VFloat a, VFloat b] = return . VBool $ a <= b
+bleq [VChar a, VChar b] = return . VBool $ a <=  b
 
-bleq ([VInt a, VInt b]) = return . VBool  $ a <= b
-bleq ([VFloat a, VFloat b]) = return . VBool $ a <= b
-bleq ([VChar a, VChar b]) = return . VBool $ a <=  b
-
-beq ([VInt a, VInt b]) = return . VBool  $ a == b
-beq ([VFloat a, VFloat b]) = return . VBool $ a == b
-beq ([VChar a, VChar b]) = return . VBool $ a ==  b
+beq [VInt a, VInt b] = return . VBool  $ a == b
+beq [VFloat a, VFloat b] = return . VBool $ a == b
+beq [VChar a, VChar b] = return . VBool $ a ==  b

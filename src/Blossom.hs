@@ -43,7 +43,7 @@ runBlossom file = do
                as' = tiProgram ce assumps [bg]
                binds = map scrubBinds bs ++ map scrubEx es ++ is
            {-mapM_ print binds-}
-           interpretBlossom binds 
+           interpretBlossom binds False
            {-mapM_ print as'-}
 
            {-print bs-}

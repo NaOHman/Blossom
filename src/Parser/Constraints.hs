@@ -12,7 +12,6 @@ import Text.Megaparsec
 
 -- TODO support Tuple sugar
 
-
 inlineQual = opList $ qual <* dot'
 
 topQual = opList $ inlineQual <|> (qual <* eol')

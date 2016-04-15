@@ -1,31 +1,25 @@
 {-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts, GADTs #-}
 
-module Parser.Literals where
+module Parser.Literals (literal) where
 
 import Parser.Core
 import Models.Expressions
-import Text.Megaparsec
 import qualified Text.Megaparsec.Lexer as L
 
 --------------------- Literal Parsers ---------------------------------
-literal = lexeme $ tryList [lFloat, lInt, lChar]
-    {-[lFloat, lBool, lInt, lArray p, lTuple p, -}
-      {-lType, lChar, lString]-}
+literal = lexeme $ try lFloat <|> lInt <|> lChar <|> try lBool
 
--- Parses a Character literal
-{-lType :: BParser Literal-}
-{-lType = LType <$> (uStr <* rword ".type")-}
+lFloat = LFloat <$> (try sufflt <|> flt)
+    where flt    = L.float
+          sufflt = fromIntegral <$> L.integer <* char 'f'
 
-lChar :: BParser Literal
-lChar = LChar <$> between (char '"') (char '"') myChar
+lInt = LInt <$> L.integer
 
--- Parses a String literal
-{-lString :: BParser Literal'-}
-{-lString = a2Cons <$> strChars-}
-    {-where strChars = between (char '"') (char '"') (many posChar)-}
-          {-posChar = lit2Expr <$> getPosition <*> (LChar <$> myChar)-}
+lChar = LChar <$> singleQuotes (escapedChar <|> noneOf "'\\\n\t\r")
 
-myChar = escapedChar <|> noneOf "'\"\\\n\t\r"
+lBool = try (LBool True <$ true_) <|> try (LBool False <$ false_)
+
+lNull = LNull <$ symbol "?"
 
 escapedChar :: BParser Char
 escapedChar = char '\\' >> choice (zipWith escape codes reps) <?> "Bad escape code"
@@ -33,49 +27,20 @@ escapedChar = char '\\' >> choice (zipWith escape codes reps) <?> "Bad escape co
           codes = "ntr\\\"'" 
           reps = "\n\t\r\\\"'" 
 
--- Parses and Integer Literal
-lInt = LInt <$> L.integer
+--------------------- Sugar ------------------------------------------
 
--- Parses a float literal
-lFloat = LFloat <$> (try sufflt <|> flt)
-    where flt    = L.float
-          sufflt = fromIntegral <$> L.integer <* char 'f'
+lString :: BParser Expr
+lString = toList <$> doubleQuotes (many stringChar)
+    where stringChar = Lit . LChar <$> (escapedChar <|> noneOf "\"\\\n\t\r")
 
--- TODO handle disambiguation e.g. List.Cons
-{-lCons :: BParser PExpr -> BParser Literal'-}
-{-lCons p = LCons <$> uName <*> ps-}
-    {-where ps = try (lStruct "(" ")" p) <|> return []-}
-
--- Parses an array literal
-{-lArray p = a2Cons <$> lStruct "[" "]" p-}
-
--- Parses a set literal, empty brackets are presumed to be Dicts
-{-lSet p = lset $ lStruct "{" "}" p-}
-{-lSet = undefined-}
-
-{-lBool :: BParser Literal'-}
-{-lBool = true <|> false-}
-    {-where true = rword "True" *> return (LCons "True" [])-}
-          {-false = rword "False" *> return  (LCons "False" [])-}
-
--- Parses a Dict literal
-{-lDict = ldict . lStruct "{" "}" . dictPair-}
-{-lDict = undefined-}
-
--- Parses a Dictionary keyword pair
-{-dictPair p = (,) <$> (p <* colon') <*> p-}
+lArray p = toList <$> brackets (sepBy p comma_)
 
 -- Parses a Tuple literal 
-{-lTuple p = parens $ do -}
-    {-head <- p <* comma'-}
-    {-tail <- sepBy1 p comma'-}
-    {-let cstr = "(" ++ replicate (1 + length tail) ',' ++ ")"-}
-    {-return $ LCons cstr (head:tail)-}
+lTuple p = do 
+    head <- p <* comma_
+    tail <- sepBy1 p comma_
+    let cstr = Var $ "(" ++ replicate (1 + length tail) ',' ++ ")"
+    return $ foldl Ap cstr (head:tail)
 
--- Parses a generic literal struct
-{-lStruct s e = between (symbol s) (symbol e) . (`sepBy` comma')-}
-
-{-a2Cons :: [PExpr] -> Literal'-}
-{-a2Cons = foldl cons nil -}
-    {-where cons l e@(Lex p _) = LCons "[cons]" [e, lit2Expr p l]-}
-          {-nil = LCons "[nil]" []-}
+toList = foldl cons (Var "[nil]") 
+    where cons e = Ap (Ap (Var "[cons]") e )

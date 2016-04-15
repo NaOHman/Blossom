@@ -71,6 +71,7 @@ indented = concatMap (\a -> "\n   " ++ show a)
 data Literal = LChar Char
              | LInt    Integer
              | LFloat  Double
+             | LBool  Bool
              | LNull
 
 instance Show Literal where
