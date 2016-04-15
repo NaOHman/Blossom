@@ -15,10 +15,10 @@ import Text.Megaparsec.Expr
 
 expr = makeExprParser term operators <?> "expression"
 
-term = tryList [eAbs, eCase, eAp, eLet, eLit, eVar, parens expr]
+term = choice [eAbs, eCase, eAp, eLet, eLit, eVar, parens expr]
 
 noApExpr = makeExprParser noApTerms operators <?> "expression"
-    where noApTerms = tryList [eAbs, eCase, eLet, eLit, eVar, parens expr]
+    where noApTerms = choice [eAbs, eCase, eLet, eLit, eVar, parens expr]
 
 eLit = Lit <$> literal
 
@@ -37,8 +37,8 @@ lambda = do ((pat, mt), ex) <- exblock (,) args
 
 args :: BParser ([Pat], Maybe (Qual Type))
 args = do 
-    (as,qts) <- unzip <$> parenCsl arg 
-    rt <- opSufCons <* arrow'
+    (as,qts) <- unzip <$> csl arg 
+    rt <- opSufCons <* arrow_
     mt <- funcAnnot qts rt
     let p = map PVar as
     return (p, mt)
@@ -55,14 +55,14 @@ eAp = try regCall <|> subRef
 
 eLet =  do i <- lName 
            sch <- opSufCons 
-           ex <- equals' *> expr
+           ex <- equals_ *> expr
            return $ case sch of
               Just s -> Let ([(i, quantAll s, ex)], []) eUnit
               _ -> Let ([],[(i, ex)]) eUnit
 
 eCase = block Case header branch
     where header = case_ *> expr <* of_
-          branch = exblock (,) ((:[]) <$> (pat <* arrow'))
+          branch = exblock (,) ((:[]) <$> (pat <* arrow_))
    
 eAnnot = Annot <$> expr <*> (quantAll <$> sufCons)
 
@@ -98,10 +98,10 @@ bOp s = InfixL $ try $
 
 opAp s = Ap (Var s)
 
-argArrow = csl arg <* arrow'
+argArrow = csl arg <* arrow_
     where arg = (,) <$> lName <*> opSufCons
 
-fArgs = parenCsl expr
+fArgs = csl expr
 
 eUnit = Lit LNull
 
