@@ -29,13 +29,13 @@ fun map(list, fn) ->
 fun factorial(x) -> 
     case x of
         1 -> 1
-        _ -> factorial((x - 1)) * x
+        _ -> x * factorial(x - 1)
 
 fun id(x) -> 
     x
 
-Given Num(a). fun square(x : a) : a -> 
-    x * x
+/*Given Num(a). fun square(x : a) : a -> */
+    /*x * x*/
 
 fun main(args) ->
     x = 4

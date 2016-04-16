@@ -15,14 +15,16 @@ import Text.Megaparsec.Expr
 
 expr = makeExprParser term operators <?> "expression"
 
-term = choice [eAbs, eCase, eAp, eLet, eLit, eVar, parens expr]
+term = choice [eAbs, eCase, eAp, eLet, eLit, terminating eVar, parens expr]
 
-noApExpr = makeExprParser noApTerms operators <?> "expression"
-    where noApTerms = choice [eAbs, eCase, eLet, eLit, eVar, parens expr]
+terminating p = try p <* notFollowedBy (char '.' <|> char '(')
+
+{-noApExpr = makeExprParser noApTerms operators <?> "expression"-}
+    {-where noApTerms = choice [eAbs, eCase, eLet, eLit, eVar, parens expr]-}
 
 eLit = Lit <$> literal
 
-eVar = Var <$> aName
+eVar = Var <$> (try aName)
 
 -- lambdas with explicitly typed arguments are contained within annotations.
 eAbs = do
@@ -44,16 +46,19 @@ args = do
     return (p, mt)
     where arg = (,) <$> lName <*> opSufCons
 
-eAp = try regCall <|> subRef
-    where subRef = do
-                ex <- noApExpr
-                (Var f) <- char '.' *> eVar
-                return $ Ap (Var ('_':f)) ex
-          regCall = do fn <- noApExpr
-                       args <- fArgs
-                       return $ foldl Ap fn args
+data ApDta = Field Id | RegAp [Expr]
 
-eLet =  do i <- lName 
+eAp = try $ do 
+    head <- parens expr <|> eVar
+    tails <- some apdta
+    return $ foldl makeAp head tails
+    where makeAp ex (Field n) = Ap (Var $ '_':n) ex
+          makeAp ex (RegAp es) = foldl Ap ex es
+
+apdta = (Field <$> (dot_ *> lName)) <|> (RegAp <$> csl expr)
+
+eLet = try $ do 
+           i <- lName 
            sch <- opSufCons 
            ex <- equals_ *> expr
            return $ case sch of
