@@ -23,7 +23,7 @@ runBlossom file = do
     case parsed of
         Left err -> print err
         Right tops -> do
-           {-mapM_ print tops-}
+           mapM_ print tops
            let (ce', as, (es,is), bs) = validate tops
                ce = ce' `M.union` classes
            {-putStrLn "Assumptions:"-}

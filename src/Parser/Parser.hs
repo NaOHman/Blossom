@@ -42,28 +42,22 @@ gVar = Bind <$> do
         _      -> Impl (name, ex)
   
 fBind = Bind <$> fDec
-fDec = try inline <|> try blk
-    where blk = block f header expr
-          inline = do (p, fn) <- header
-                      ex <- expr
-                      return $ fn (Abs (p,ex))
-          header = do 
-              q <- topQual
+fDec = exblock f header
+    where header = do 
+              q <- try topQual
               n <- fun_ *> lName
               (p, mqt) <- args
-              {-p' = scrubZeroProd p-}
               return (p, case mqt of
-                  Just (qs :=> t) -> 
-                      let sch = quantUser ((q ++ qs) :=> t)
-                      in (Expl . (n, sch,))
+                  Just (qs :=> t) -> let sch = quantUser ((q ++ qs) :=> t)
+                                     in (Expl . (n, sch,))
                   Nothing -> Impl . (n,))
-          f (p,fn) exs = fn (Abs (p, chain exs))
+          f (p,fn) ex = fn (Abs (p, ex))
 
-adt = ADT <$> block ($) header cStub
+adt = ADT <$> try (block ($) header cStub)
     where header = Adt <$> topQual <*> (data_ *> vCons <* where_)
           cStub = (,) <$> uName <*> opList (csl ptype)
 
-rdt = RDT <$> block ($) header field 
+rdt = RDT <$> try (block ($) header field)
     where header = do q <- topQual 
                       t <- data_ *> vCons
                       ss <- superTypes <* where_
@@ -73,7 +67,7 @@ rdt = RDT <$> block ($) header field
                      return ('_':fname, t)
           superTypes = opList (inherits_ *> sepBy1 vCons comma_)
 
-behavior = Bvr <$> block ($) header stub 
+behavior = Bvr <$> try (block ($) header stub)
     where header = try $ do 
               q <- topQual
               t <- vVar
@@ -87,7 +81,7 @@ behavior = Bvr <$> block ($) header stub
                   Just ts -> ts `mkFun` rt
                   Nothing -> rt)
 
-implem = Imp <$> block ($) header fDec'
+implem = Imp <$> try (block ($) header fDec')
     where fDec' = do bs <- fDec
                      return $ toImpl bs 
           toImpl (Expl (i,_,e)) = (i,e)
