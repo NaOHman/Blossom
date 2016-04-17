@@ -1,6 +1,6 @@
 {-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts, GADTs #-}
 
-module Parser.Literals (literal) where
+module Parser.Literals (literal, lString) where
 
 import Parser.Core
 import Models.Expressions
@@ -42,5 +42,5 @@ lTuple p = do
     let cstr = Var $ "(" ++ replicate (1 + length tail) ',' ++ ")"
     return $ foldl Ap cstr (head:tail)
 
-toList = foldl cons (Var "[nil]") 
+toList = foldr cons (Var "[nil]") 
     where cons e = Ap (Ap (Var "[cons]") e )

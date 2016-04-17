@@ -4,6 +4,7 @@ import Models.Types
 import Types.Utils
 import Models.Program
 import Models.Expressions
+import PreProcessor.PreProcessor (splitImpl)
 import Text.Megaparsec
 import Data.List (nub, union, intersect, partition, (\\))
 import Data.Maybe (fromMaybe, isJust, isNothing)
@@ -26,7 +27,7 @@ tiExpr ce as (Ap e1 e2) = do
     let err = "TIAp " ++ show (Ap e1 e2)
     unify err t1 (t2 `func` t)
     return (ps ++ qs, t) 
-tiExpr ce as (Let bg ex) = do (ps, as') <- tiBindGroup ce as (fixBG bg)
+tiExpr ce as (Let bg ex) = do (ps, as') <- tiBindGroup ce as (fixBG $ splitImpl bg)
                               (qs, t) <- tiExpr ce (as' ++ as) ex
                               return (ps++qs, t)
 tiExpr ce as (Case e bs) = do 
@@ -52,6 +53,7 @@ tiLit :: Literal -> TI ([Pred], Type)
 tiLit (LChar _)   = return ([], tChar)
 tiLit (LInt _)    = return ([], tInt)
 tiLit (LFloat _)  = return ([], tFloat)
+tiLit (LBool _)  = return ([], tBool)
 tiLit LNull       = return ([], tNull)
 
 
@@ -216,7 +218,7 @@ type TExpl = (Id, Scheme, TAlt)
 type BG = ([TExpl], [[TImpl]])
 
 fixBG :: BindGroup -> BG
-fixBG (es, is) = (map fixEs es, [map fixIs is])
+fixBG (es, is) = (map fixEs es, map (map fixIs) is)
     where fixEs ((i,s, Abs (p, e))) = (i,s,(p, e))
           fixEs ((i,s, e)) = (i,s,([], e))
           fixIs ((i, Abs (p,e))) = (i,(p, e))

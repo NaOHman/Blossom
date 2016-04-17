@@ -32,7 +32,7 @@ instance Show OBind where
     show (OBind i _ e) = show (i,e)
 
 type Alt = ([Pat], Expr)
-type BindGroup = ([Expl], [Impl])
+type BindGroup = ([Expl], [[Impl]])
 type Class = ([Id], [Inst], [OBind])
 
 class Nameable a where
@@ -46,7 +46,7 @@ data Expr = Lit Literal
           | Var  Id
           | Abs  Alt
           | Ap   Expr Expr
-          | Let  BindGroup Expr
+          | Let  [Binding] Expr
           | Case Expr [Alt]
           | Annot Expr Scheme
           | Over [(Qual Type, Expr)]
@@ -58,7 +58,7 @@ instance Show Expr where
     show (Ap e1 e2) = "(AP" ++ show e1 ++  " " ++ show e2 ++ ")"
     show (Case e as) =  "Case " ++ show e ++ " of" ++ indentedAlt as
     show (Annot e s) = show e ++ " : " ++ show s
-    show (Let bg ex) = show "Let " ++ showBG bg ++ " in " ++ show ex
+    show (Let bg ex) = show "Let " ++ show bg ++ " in " ++ show ex
     show (Over os)   = show "Overload " ++ concatMap (\(qt,e) -> "\n  " ++ show qt ++  " => " ++ show e) os
 
 showBG (es, is) = indented es ++  indented is
@@ -78,6 +78,7 @@ instance Show Literal where
     show (LChar  c) = show c
     show (LInt   i) = show i
     show (LFloat d) = show d
+    show (LBool b) = show b
     show LNull      = "Null"
 
 data Pat = PCons Id [Pat]

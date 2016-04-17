@@ -55,12 +55,10 @@ lookupScope i@(c:_) (Scope sc)
     | otherwise = lookup i sc
 
 
-letBinds :: Scope -> BindGroup -> MEval Scope
-letBinds s (es,is) = do es <-  mapM bindEx es 
-                        is <- mapM bindIm is
-                        return (Scope $ es ++ is)
-    where bindEx (i,_,e) = eval s e >>= \v -> return (i,v)
-          bindIm (i,e) = eval s e >>= \v -> return (i,v)
+letBinds :: Scope -> [Binding] -> MEval Scope
+letBinds s bs = Scope <$> mapM bind' bs 
+    where bind' (Expl (i,_,e)) = eval s e >>= \v -> return (i,v)
+          bind' (Impl (i,e)) = eval s e >>= \v -> return (i,v)
 
 eval :: Scope -> Expr -> MEval Value
 eval s (Lit l) = do
@@ -103,7 +101,7 @@ eval s (Ap e1 e2) = do
     evalAp s e1 [e2] 
 
 evalAp s (Ap e1 e2) es = do
-    dprint $ "two for one"
+    dprint "two for one"
     evalAp s e1 (e2:es)
 evalAp s f es  = do
     dprint $ "eval " ++ show f ++ " `ap` " ++ show es

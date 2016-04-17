@@ -20,11 +20,36 @@ data Corgi inherits Dog where
             /*Nil -> Nil*/
             /*Cons(a,as) -> Cons(fn(a), map(as, fn))*/
 
+fun foo(list) ->
+    case list of
+        Nil -> bar(list)
+        _ -> print("Hello World")
+
+fun bar(list) -> 
+    case list of 
+        Nil -> print("hello from Bar")
+        _ -> foo(list)
+
 fun map(list, fn) -> 
     case list of
         Nil -> Nil
         Cons(a,as) -> Cons(fn(a), map(as, fn))
 
+fun foldl(list, fn, acc) ->
+    case list of
+        Nil -> acc
+        Cons(a,as) -> foldl(as, fn, fn(acc, a))
+
+fun mult(x,y) -> x * y
+
+fun product(list) -> foldl(list, mult, 1)
+
+fun range(low,high) -> 
+    case (low == high) of
+        True -> Nil
+        _ -> Cons(low, range(low + 1, high))
+
+fun factorial_(x) -> product(range(0,1))
 
 fun factorial(x) -> 
     case x of

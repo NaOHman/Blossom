@@ -170,12 +170,12 @@ a `func` b = TAp (TAp tArrow a) b
 tUnit = TCons (Tycon "()" Star)
 tNull = TCons (Tycon "Null" Star)
 tType = TCons (Tycon "Type" Star)
-tString = TAp tList tChar
+tString = tList tChar
 tChar = TCons (Tycon "Char" Star)
 tInt = TCons (Tycon "Int" Star)
 tBool = TCons (Tycon "Bool" Star)
 tFloat = TCons (Tycon "Float" Star)
-tList = TCons (Tycon "[]" (KFun Star Star))
+tList = TAp (TCons (Tycon "[]" (KFun Star Star)))
 tArrow = TCons (Tycon "->" (KFun Star (KFun Star Star)))
 tcons n k = TCons (Tycon n k)
 

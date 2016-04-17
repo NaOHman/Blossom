@@ -23,9 +23,10 @@ runBlossom file = do
     case parsed of
         Left err -> print err
         Right tops -> do
-           mapM_ print tops
-           let (ce', as, (es,is), bs) = validate tops
+           {-mapM_ print tops-}
+           let (ce', as, bg, bs) = validate tops
                ce = ce' `M.union` classes
+           mapM_ (\bg -> print bg >> print "-------------") bg
            {-putStrLn "Assumptions:"-}
            {-mapM_ print as-}
            {-putStrLn "Builtin bindings:"-}
@@ -37,13 +38,14 @@ runBlossom file = do
            {-putStrLn "ClassEnv:"-}
            {-print ce-}
            {-putStrLn "Passed PreProcessor"-}
-           let assumps = printAs:sqAssump : as ++ defaultAssumps
+           let assumps = printAs:sqAssump:consAs:nilAs: as ++ defaultAssumps
            {-mapM_ print assumps-}
-           let bg = fixBG (es,is)
-               as' = tiProgram ce assumps [bg]
-               binds = map scrubBinds bs ++ map scrubEx es ++ is
+           let bgs = map fixBG bg
+               as' = tiProgram ce assumps bgs
+               {-binds = map scrubBinds bs ++ map scrubEx es ++ is-}
+           print as'
            {-mapM_ print binds-}
-           interpretBlossom binds False
+           {-interpretBlossom bs False-}
            {-mapM_ print as'-}
 
            {-print bs-}
@@ -91,12 +93,13 @@ parseArgs (f:as) = (False, f, as)
           {-stars = replicate n Star-}
 
 sqAssump = "!seq" :>: Forall [Star, Star] ([] :=> ([TGen 0,TGen 1] `mkFun` TGen 1))
-{-zeroProd = "0PROD" :>: Forall [] ([] :=> (TCons $ Tycon "0PROD" Star))-}
+consAs = "[cons]" :>: Forall [Star] ([] :=> ([TGen 0, tList (TGen 0)] `mkFun` tList (TGen 0)))
+nilAs = "[nil]" :>: Forall [Star] ([] :=> tList (TGen 0))
 printAs = "print" :>: Forall [Star] ([IsIn "Showable" [TGen 0]] :=> (TGen 0 `func` tNull))
 
 classes = M.fromList $ map mkCls 
     [("Eq", [], [tInt, tChar, tFloat, tBool])
-    ,("Showable", [], [tInt, tChar, tFloat, tBool])
+    ,("Showable", [], [tInt, tChar, tFloat, tBool, tString])
     ,("Ord", ["Eq"], [tInt, tChar, tFloat])
     ,("Num", ["Eq","Show"], [tInt, tFloat])
     ,("Real", ["Num","Ord"], [tInt, tFloat])
@@ -116,11 +119,11 @@ defaultAssumps = map toAsmp [
   ,("*",     "Num",        binary)
   ,("//",    "Integral",   binary)
   ,("%",     "Integral",   binary)
-  ,("<",     "Ord",        binary)
-  ,(">",     "Ord",        binary)
-  ,(">=",    "Ord",        binary)
-  ,("<=",    "Ord",        binary)
-  ,("==",    "Eq",         binary)
+  ,("<",     "Ord",        binBool)
+  ,(">",     "Ord",        binBool)
+  ,(">=",    "Ord",        binBool)
+  ,("<=",    "Ord",        binBool)
+  ,("==",    "Eq",         binBool)
   ,("and",   "",           bbool)
   ,("or",    "",           bbool)
   ,("xor",   "",           bbool)
@@ -128,6 +131,7 @@ defaultAssumps = map toAsmp [
   ]
   {-,("print", "",           mkFun [tString] unit)-}
   where binary = mkFun [v',v'] v'
+        binBool = mkFun [v',v'] tBool
         unary  = mkFun [v']   v'
         bbool = tBool `func` tBool `func` tBool
         ubool = tBool 

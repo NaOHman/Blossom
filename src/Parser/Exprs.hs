@@ -26,7 +26,8 @@ term = choice [eAbs, eCase, eAp, eLet, eLit, terminating eVar, parens expr]
 
 terminating p = try p <* notFollowedBy (char '.' <|> char '(')
 
-eLit = Lit <$> literal
+eLit = Lit <$> literal <|> litSugar
+    where litSugar = lString
 
 eVar = Var <$> try aName
 
@@ -52,8 +53,8 @@ eLet = try $ do
            sch <- opSufCons 
            ex <- equals_ *> expr
            return $ case sch of
-              Just s -> Let ([(i, quantAll s, ex)], []) eUnit
-              _ -> Let ([],[(i, ex)]) eUnit
+              Just s -> Let [Expl (i, quantAll s, ex)] eUnit
+              _ -> Let [Impl (i, ex)] eUnit
 
 eCase = block Case header branch
     where header = case_ *> expr <* of_

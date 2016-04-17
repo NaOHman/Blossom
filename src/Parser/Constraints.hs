@@ -50,4 +50,4 @@ vCons = genType uName vVar mkCons
 
 sugar = try unit <|> try list 
     where unit = symbol "()" >> return tUnit
-          list = TAp tList <$> brackets ptype 
+          list = tList <$> brackets ptype 

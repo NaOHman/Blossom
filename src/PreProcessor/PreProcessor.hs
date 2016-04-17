@@ -11,16 +11,62 @@ import Control.Monad.Trans.Either
 import Control.Monad.State
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
-import Data.List (find, sort, delete)
+import Data.List (find, sort, delete, (\\), nub)
 import Data.Maybe (isJust)
+import Data.Char (isLower)
 import GHC.Exts (groupWith)
-import Text.Megaparsec.Pos
+import Data.Graph hiding (scc)
+import Data.Graph.SCC
 
 type PP a = State Int a
 
 validate ts = evalState (preprocess ts) 0
 
-preprocess :: [Top] -> PP (ClassEnv, [Assump], BindGroup, [Binding])
+splitBindings :: [Binding] -> [BindGroup]
+splitBindings bs = reverse $ map splitImpl $ depGroups [] bs
+
+splitImpl :: [Binding] -> BindGroup
+splitImpl bs =
+            let (es, is) = splitBinds bs
+                eIds = map (\(i,_,_) -> i) es
+                iGroups = depGroups eIds (map Impl is)
+                iBinds = map (map (\(Impl tpl) -> tpl)) iGroups
+            in (es, iBinds)
+        
+
+depGroups :: [Id] -> [Binding] -> [[Binding]]
+depGroups ids bs = 
+    let edges = map (findDeps ids) bs
+        (dGraph, mapping, _) = graphFromEdges edges
+        (components, _) = scc dGraph
+        vertices = map snd components
+        nodev (b,_,_) = b
+    in map (map (nodev . mapping)) vertices
+        
+findDeps ids b@(Impl(i,e)) = (b, i, userVars e \\ (i:ids)) 
+findDeps ids b@(Expl(i,_,e)) = (b, i, userVars e \\ (i:ids)) 
+
+userVars :: Expr -> [Id]
+userVars (Var i@(c:_)) 
+    | isLower c = [i | i /= "print"]
+    | otherwise = []
+userVars (Abs (ps,e)) = userVars e \\ nub (concatMap pvar ps)
+userVars (Ap e1 e2) = nub $ userVars e1 ++ userVars e2
+userVars (Let bs e) = let ids = map bindingName bs
+                          es  = map exprOf bs
+                      in nub (userVars e ++ concatMap userVars es) \\ ids
+userVars (Case e bs) = nub $ userVars e ++ concatMap (userVars . Abs) bs
+userVars (Annot e _) = userVars e
+userVars (Lit _) = []
+-- userVars is undefined for overloaded expressions since
+-- they should never be passed to this function
+
+pvar (PVar v) = [v]
+pvar (PAs v p) = v : pvar p
+pvar (PCons _ ps) = nub $ concatMap pvar ps
+pvar _ = []
+                           
+preprocess :: [Top] -> PP (ClassEnv, [Assump], [BindGroup], [Binding])
 preprocess ts = do
     let (bnds, rdt, adt, bvs, imps) = splitTops ts
     (fbs', recCE) <- processRecs rdt
@@ -51,7 +97,7 @@ preprocess ts = do
     {-mn <- genMain binds-}
     let (es,is) = splitBinds binds
     let eassumps = map (\(i,sc,_) -> i :>: sc) es
-    return (ce, assumps, (es,is), impBinds)
+    return (ce, assumps, splitBindings binds, impBinds)
 
 bindingAssumps = map (\(Expl (i,s,_)) -> i :>: s) 
 constrBinds = map toBind 
@@ -247,9 +293,11 @@ genMain :: [Binding] -> PP Expr
 genMain bs = do
     let (m, bs') = split (("main" ==) . bindingName) bs
     unless (length m == 1) (fail "Could not find main")
-    return $ Let (splitBinds bs') (exprOf $ head m)
-    where exprOf (Impl (_,e)) = e
-          exprOf (Expl (_,_,e)) = e
+    return $ Let bs' (exprOf $ head m)
+    
+exprOf :: Binding -> Expr
+exprOf (Impl (_,e)) = e
+exprOf (Expl (_,_,e)) = e
     
 newTVar k = do i <- get
                let v = "&var" ++ show i
