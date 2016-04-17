@@ -1,6 +1,13 @@
 {-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts, GADTs, TupleSections #-}
 
-module Parser.Exprs where
+module Parser.Exprs 
+   ( expr
+   , lambda
+   , args
+   , pat
+   , exblock
+   , quantUser
+   ) where
 
 import Parser.Core
 import Data.Maybe
@@ -19,12 +26,9 @@ term = choice [eAbs, eCase, eAp, eLet, eLit, terminating eVar, parens expr]
 
 terminating p = try p <* notFollowedBy (char '.' <|> char '(')
 
-{-noApExpr = makeExprParser noApTerms operators <?> "expression"-}
-    {-where noApTerms = choice [eAbs, eCase, eLet, eLit, eVar, parens expr]-}
-
 eLit = Lit <$> literal
 
-eVar = Var <$> (try aName)
+eVar = Var <$> try aName
 
 -- lambdas with explicitly typed arguments are contained within annotations.
 eAbs = do
@@ -33,21 +37,7 @@ eAbs = do
         Just sc  -> Annot (Abs lam) (quantUser sc)
         Nothing -> Abs lam
 
-lambda :: BParser (Alt, Maybe (Qual Type))
-lambda = do ((pat, mt), ex) <- exblock (,) args
-            return ((pat, ex), mt)
-
-args :: BParser ([Pat], Maybe (Qual Type))
-args = do 
-    (as,qts) <- unzip <$> csl arg 
-    rt <- opSufCons <* arrow_
-    mt <- funcAnnot qts rt
-    let p = map PVar as
-    return (p, mt)
-    where arg = (,) <$> lName <*> opSufCons
-
 data ApDta = Field Id | RegAp [Expr]
-
 eAp = try $ do 
     head <- parens expr <|> eVar
     tails <- some apdta
@@ -70,6 +60,20 @@ eCase = block Case header branch
           branch = exblock (,) ((:[]) <$> (pat <* arrow_))
    
 eAnnot = Annot <$> expr <*> (quantAll <$> sufCons)
+
+lambda :: BParser (Alt, Maybe (Qual Type))
+lambda = do ((pat, mt), ex) <- exblock (,) args
+            return ((pat, ex), mt)
+
+args :: BParser ([Pat], Maybe (Qual Type))
+args = do 
+    (as,qts) <- unzip <$> csl arg 
+    rt <- opSufCons <* arrow_
+    mt <- funcAnnot qts rt
+    let p = map PVar as
+    return (p, mt)
+    where arg = (,) <$> lName <*> opSufCons
+
 
 pat  =  try (PCons <$> uName <*> (try (csl pat) <|> return []))
     <|> try (PAs   <$> (lName <* char '#') <*> pat)

@@ -34,8 +34,9 @@ fun factorial(x) ->
 fun id(x) -> 
     x
 
-/*Given Num(a). fun square(x : a) : a -> */
-    /*x * x*/
+Given Num(a)
+fun square(x : a) : a -> 
+    x * x
 
 fun main(args) ->
     x = 4

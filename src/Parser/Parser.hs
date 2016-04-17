@@ -33,7 +33,7 @@ blossom = re []
                           Just _ -> return prg
                           _ -> go prg
  
-gVar = Bind <$> do 
+gVar = try $ Bind <$> do 
     name <- uName
     sch <- opSufCons
     ex <- equals_ *> expr
@@ -41,7 +41,7 @@ gVar = Bind <$> do
         Just qt -> Expl (name, quantAll qt, ex)
         _      -> Impl (name, ex)
   
-fBind = Bind <$> fDec
+fBind = try $ Bind <$> fDec
 fDec = exblock f header
     where header = do 
               q <- try topQual
@@ -53,7 +53,7 @@ fDec = exblock f header
                   Nothing -> Impl . (n,))
           f (p,fn) ex = fn (Abs (p, ex))
 
-adt = ADT <$> try (block ($) header cStub)
+adt = try $ ADT <$> try (block ($) header cStub)
     where header = Adt <$> topQual <*> (data_ *> vCons <* where_)
           cStub = (,) <$> uName <*> opList (csl ptype)
 
