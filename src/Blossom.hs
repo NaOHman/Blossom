@@ -26,15 +26,12 @@ runBlossom file = do
            {-mapM_ print tops-}
            let (ce', as, bg, bs) = validate tops
                ce = ce' `M.union` classes
-           mapM_ (\bg -> print bg >> print "-------------") bg
+           {-mapM_ print as-}
+           {-mapM_ (\bg -> print bg >> print "-------------") bg-}
            {-putStrLn "Assumptions:"-}
            {-mapM_ print as-}
            {-putStrLn "Builtin bindings:"-}
            {-mapM_ print bs-}
-           {-putStrLn "Explicit Binds:"-}
-           {-mapM_ print es-}
-           {-putStrLn "Implicit Binds:"-}
-           {-mapM_ print is-}
            {-putStrLn "ClassEnv:"-}
            {-print ce-}
            {-putStrLn "Passed PreProcessor"-}
@@ -43,7 +40,7 @@ runBlossom file = do
            let bgs = map fixBG bg
                as' = tiProgram ce assumps bgs
                {-binds = map scrubBinds bs ++ map scrubEx es ++ is-}
-           print as'
+           {-print as'-}
            {-mapM_ print binds-}
            {-interpretBlossom bs False-}
            {-mapM_ print as'-}

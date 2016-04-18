@@ -1,8 +1,6 @@
 {-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts #-}
 module PreProcessor.PreProcessor where
 
--- Map from type names to valid Constructors for the type
-
 import Models.Program
 import Types.Utils hiding (find)
 import Control.Monad (foldM)
@@ -11,7 +9,7 @@ import Control.Monad.Trans.Either
 import Control.Monad.State
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
-import Data.List (find, sort, delete, (\\), nub)
+import Data.List (find, sort, delete, (\\), nub, partition)
 import Data.Maybe (isJust)
 import Data.Char (isLower)
 import GHC.Exts (groupWith)
@@ -77,14 +75,15 @@ preprocess ts = do
     bhCE <- makeCE bvs imps
 
     let constructors = concatMap dCstrs adt ++ concatMap dCstrs rdt 
-        fassumps = bindingAssumps (fbs ++ ceBinds fieldCE ++ ceBinds recCE ++ ceBinds bhCE)
+        ce = M.unions [bhCE, overCE, recCE, fieldCE] 
+
+        fassumps = bindingAssumps (fbs ++ overBinds bhCE ++ ceBinds ce)
         assumps = makeCstrAssumps constructors ++ fassumps
 
         impl' = map Impl impl
-        ce = M.unions [bhCE, overCE, recCE, fieldCE] 
         consBinds = constrBinds constructors
-        impBinds = ceBinds overCE ++ ceBinds recCE ++ fbs ++ ceBinds fieldCE ++ consBinds ++ ceBinds bhCE
-        binds = impl' ++ expl' -- ++ overBinds bhCE
+        impBinds = ceBinds ce ++ fbs ++ consBinds
+        binds = impl' ++ expl'  ++ overBinds bhCE
 
         aNames = concatMap dNames adt
         rNames = concatMap dNames rdt
@@ -106,25 +105,30 @@ constrBinds = map toBind
 makeCstrAssumps = map (uncurry (:>:))
 
 overBinds :: ClassEnv -> [Binding]
-overBinds = concatMap unpack . getOvers
+overBinds = M.foldMapWithKey f
+    where f i (_,_,os) = concatMap (unpack i) os
 
-getOvers :: ClassEnv -> [OBind]
-getOvers = concatMap (\(_,_,os) -> os) . M.elems
+implName i qt = "$" ++ i ++  "#" ++ show qt
 
-unpack :: OBind -> [Binding]
-unpack (OBind i fn (Over ps)) = map bnd ps
-    where bnd (qt, ex) = 
-                let name = "$" ++ i ++ "[" ++ show qt ++ "]"
-                in Expl (name, quantAll qt, ex)
+unpack :: Id -> Expl -> [Binding]
+unpack cls (i, sc@(Forall k (q:=>t)), Over ps) = 
+    let ([IsIn _ [TGen n]],qs) = partition qualFilter q
+    in map (bnd n (Forall k (qs:=>t))) ps
+    where qualFilter (IsIn i _) = i == cls
+          bnd n sc (qt, ex) = 
+              let sch = pInst qt n sc
+              in Expl (implName i qt, sch, ex)
+
+pInst (q:=>t) n (Forall ks (ps:=>st)) = 
+    let ts = zipWith f ks [0..]
+    in quantify (tv ts) ((q++ps) :=> inst ts st)
+    where f k m
+            | m == n = t
+            | otherwise = TVar $ Tyvar (show m) k
 
 ceBinds :: ClassEnv -> [Binding]
-ceBinds = M.foldMapWithKey f 
-    where f cls (_,_,bs) = map (g cls) bs
-          g cls (OBind i fn ex) = let tv = Tyvar "&var^" Star
-                                      t = TVar tv
-                                      pred = [IsIn cls [t]]
-                                      sch = quantify [tv] (pred :=> fn t)
-                                  in Expl (i, sch, ex)
+ceBinds = M.foldl f []
+    where f as (_,_,bs) = as ++ map Expl bs
 
 uniq :: Eq a => [a] -> Bool
 uniq xs = uniq' xs []
@@ -143,21 +147,21 @@ addImp ce (Im q t i ss) = do
    (sc,is,stbs) <- case M.lookup i ce of
              Just cls -> return cls
              Nothing -> fail $ "Behavior " ++ i ++ "Not Found"
-   let inst = q :=> IsIn i [t] 
+   let inst = q :=> IsIn i [spine t] 
        bns = map fst ss
-       sns = map obName stbs
+       sns = map (\(i,_,_) -> i) stbs
    unless (sort bns == sort sns) 
           (fail $ "Must implement stubs defined by " ++ i)
-   let stbs' = foldl (addStub q (TCons $  getCons t)) stbs ss
+   let stbs' = foldl (addStub (q :=> (TCons $  getCons t))) stbs ss
    return (M.insert i (sc,inst:is, stbs') ce)
 
-addStub :: [Pred] -> Type -> [OBind] -> (Id, Expr) -> [OBind] 
-addStub q t stbs (sn, ex) = map add' stbs
-    where add' (OBind n f (Over bs))
-              | n == sn = OBind n f (Over ((q :=> f t,ex) : bs))
-              | otherwise = OBind n f (Over bs)
+addStub :: Qual Type -> [Expl] -> (Id, Expr) -> [Expl] 
+addStub qt stbs (sn, ex) = map add' stbs
+    where add' (n, sc, Over bs)
+              | n == sn = (n, sc, Over ((qt, ex) : bs))
+              | otherwise = (n, sc, Over bs)
 
-stubNames = map obName . concatMap (\(_,_,o) -> o) . M.elems 
+stubNames = map (\(i,_,_) -> i) . concatMap (\(_,_,o) -> o) . M.elems 
     
 foldCBS = foldM f []
     where f bs b = (:bs) <$> toCB b (map fst bs)
@@ -166,15 +170,15 @@ toCB :: Behavior -> [Id] -> PP (Id, Class)
 toCB (Bhvr q t n stbs) bs = do
     ss <- mapM sups q 
     return (n, (ss, [], map mkStub stbs))
-    where mkStub (i, st) = let btv = bhVar t
-                               fn x = apply (btv +-> x) st
-                           in OBind i fn (Over [])
+    where mkStub (i, st) = let bt = spine t
+                               sc = quantAll ([IsIn n [bt]] :=> st)
+                           in (i, sc, Over [])
           sups (IsIn i _) = if i `elem` bs 
                 then return i
                 else fail "Super Behavior not yet defined"
 
-bhVar (TAp t _) = bhVar t
-bhVar (TVar tv) = tv
+spine (TAp t _) = spine t
+spine t = t
 
 processRecs :: [Rec] -> PP ([Expl], ClassEnv)
 processRecs rs = do
@@ -201,18 +205,21 @@ promote rs@((sup,_):_) = do
 
 makeSuperClass :: Rec -> [Rec] -> (Id,Class)
 makeSuperClass s@(Rec q t ss fs) impl =
-    let stubs = map superStub fs
-        name = '*' : consName t
+    let name = '*' : consName t
+        stubs = map (superStub name) fs
         supers = map (('*':) . consName) ss
         ts = map qualed impl
         insts = map (\(p:=>t) -> p :=> IsIn name [t]) ts
     in (name, (supers, insts, stubs))
-    where superStub (id,ft) = OBind id (\t -> [t] `mkFun` ft) (Over [])
+    where superStub n (id,ft) = 
+               let q =  [IsIn n [t]]
+                   t' = [t] `mkFun` ft
+               in (id,quantQual q t', Over [])
 
 
 -- Return the list of overloaded field bindings and the
 -- list of type-specific bindings
-bindSup :: ([Expl],[OBind]) -> Rec -> PP ([Expl], [OBind])
+bindSup :: ([Expl],[Expl]) -> Rec -> PP ([Expl], [Expl])
 bindSup (bs,stubs) r@(Rec q t _ ss) = do 
     let fbs = fieldBinds r
         (over,under) = split inStubs fbs
@@ -220,10 +227,10 @@ bindSup (bs,stubs) r@(Rec q t _ ss) = do
         obs = map (\(i,_,e) -> (i,e)) over
     unless (length stubs == length over) 
            (fail "Must include all fields of super type")
-    let stbs = foldl (addStub q t) stubs obs
+    let stbs = foldl (addStub (q :=> t)) stubs obs
     {-return stbs-}
     return (under ++ bs, stbs)
-    where inStubs (b,s,_) = isJust (find (\a -> obName a == b) stubs)
+    where inStubs (b,s,_) = isJust (find (\(i,_,_) -> i == b) stubs)
 
 fieldBinds (Rec q t _ fs) = zipWith f fs [0..]
     where f (n, ft) i = let sch = quantQual q ([ft] `mkFun` t)
@@ -261,7 +268,7 @@ overBehavior bs@((i,_, _):_) = do
         v = TVar $ Tyvar "^var" Star
         sch = quantQual [IsIn cname [v]] v
         insts = map (makeInst cname . fst) pairs
-        stubs =  [OBind i id (Over pairs)]
+        stubs =  [(i, sch, Over pairs)]
     return $ M.singleton cname ([], insts, stubs)
     where 
           makeInst cls (qs :=> t) = qs :=> IsIn cls [t]
@@ -317,8 +324,6 @@ qualed (Rec q t _ _) = q :=> t
 
 split p = foldl f ([],[])
     where f (as,bs) x = if p x then (x:as,bs) else (as,x:bs)
-
-obName (OBind n _ _) = n
 
 groupExpl = groupWith (\(n,_,_) -> n)
 emptySch = Forall [Star] ([] :=> TGen 0)

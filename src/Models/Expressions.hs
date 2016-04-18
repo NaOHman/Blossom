@@ -8,7 +8,6 @@ module Models.Expressions
     , Alt(..)
     , Expl(..)
     , Impl(..)
-    , OBind(..)
     , Class(..)
     , BindGroup(..)
     , Binding(..)
@@ -26,14 +25,9 @@ import Data.List (intercalate)
 type Expl = (Id, Scheme, Expr)
 type Impl = (Id, Expr)
 
-data OBind = OBind Id (Type -> Type) Expr
-
-instance Show OBind where
-    show (OBind i _ e) = show (i,e)
-
 type Alt = ([Pat], Expr)
 type BindGroup = ([Expl], [[Impl]])
-type Class = ([Id], [Inst], [OBind])
+type Class = ([Id], [Inst], [Expl])
 
 class Nameable a where
     nameOf :: a -> Id

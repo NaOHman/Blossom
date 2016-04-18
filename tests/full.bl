@@ -11,14 +11,14 @@ data Corgi inherits Dog where
     .owner   : String
     .royalty : Bool
 
-/*m<a> is Mappable when*/
-    /*map (m<a>, <a,b> -> b) : m<b>*/
+m<a> is Mappable when
+    map (m<a>, <a> -> b) : m<b>
 
-/*List<a> is Mappable because*/
-    /*fun map(list, fn) -> */
-        /*case list of*/
-            /*Nil -> Nil*/
-            /*Cons(a,as) -> Cons(fn(a), map(as, fn))*/
+List<a> is Mappable because
+    fun map(list, fn) -> 
+        case list of
+            Nil -> Nil
+            Cons(a,as) -> Cons(fn(a), map(as, fn))
 
 fun foo(list) ->
     case list of
@@ -30,12 +30,12 @@ fun bar(list) ->
         Nil -> print("hello from Bar")
         _ -> foo(list)
 
-fun map(list, fn) -> 
-    case list of
-        Nil -> Nil
-        Cons(a,as) -> Cons(fn(a), map(as, fn))
+/*fun map(list, fn) -> */
+    /*case list of*/
+        /*Nil -> Nil*/
+        /*Cons(a,as) -> Cons(fn(a), map(as, fn))*/
 
-fun foldl(list, fn, acc) ->
+fun foldl(list : List<a>, fn : <b,a>->b, acc :b) : b ->
     case list of
         Nil -> acc
         Cons(a,as) -> foldl(as, fn, fn(acc, a))
@@ -66,9 +66,8 @@ fun square(x : a) : a ->
 fun main(args) ->
     x = 4
     id(x)
-    /*print("Hello World!")*/
-    /*print("The factorial of 4 is:")*/
-    /*print(y)*/
-    /*print(factorial(1))*/
-    /*print(x * x)*/
+    print("Hello World!")
+    print("The factorial of 4 is:")
+    print(factorial(1))
+    print(x * x)
     print(factorial(3))
