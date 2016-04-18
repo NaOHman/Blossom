@@ -39,6 +39,12 @@ tiExpr ce as (Case e bs) = do
     unify err bt (te `func` rt)
     return (ps ++ qs, rt) 
 
+tiExpr ce as (Over i v _) = do
+    sc <- find i as
+    (ps :=> t) <- freshInst sc
+    unify "Overloaded variable" v t
+    return (ps,t)
+
 tiExprs ce as ts = do res <- mapM (tiExpr ce as) ts
                       let ps' = concat [ps | (ps,_) <- res]
                           ts' = [ts | (_,ts) <- res]
@@ -201,14 +207,15 @@ tryPats as ps = runTI $ do
     return (apply s as, apply s t)
    
 
-tiProgram :: ClassEnv -> [Assump] -> [BG] -> [Assump]
+tiProgram :: ClassEnv -> [Assump] -> [BG] -> ([Assump],Subst)
 tiProgram ce as bgs = runTI $ do
     (ps, as') <- tiSeq tiBindGroup ce as bgs
     s         <- getSubst
     {-return (apply s as')-}
     rs        <- reduce ce (apply s ps)
     s'        <- defaultSubst ce [] rs
-    return (apply (s'@@s) as')
+    let sub = s'@@ s
+    return (apply sub as', sub)
 
 newtype TI a = TI (Subst -> Int -> (Subst, Int, a))
 

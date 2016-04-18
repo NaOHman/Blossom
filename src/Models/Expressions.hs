@@ -2,10 +2,10 @@
 module Models.Expressions 
     ( module Models.Core
     , module Models.Types
-    , Expr (..)
-    , Literal (..)
+    , Expr (..) , Literal (..)
     , Pat (..)
     , Alt(..)
+    , Stub(..)
     , Expl(..)
     , Impl(..)
     , Class(..)
@@ -21,13 +21,15 @@ import Parser.Core
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import Data.List (intercalate)
+import Control.Arrow (second)
     
 type Expl = (Id, Scheme, Expr)
 type Impl = (Id, Expr)
 
 type Alt = ([Pat], Expr)
 type BindGroup = ([Expl], [[Impl]])
-type Class = ([Id], [Inst], [Expl])
+type Stub = (Id, Scheme, [(Scheme, Expr)])
+type Class = ([Id], [Inst], [Stub])
 
 class Nameable a where
     nameOf :: a -> Id
@@ -43,7 +45,32 @@ data Expr = Lit Literal
           | Let  [Binding] Expr
           | Case Expr [Alt]
           | Annot Expr Scheme
-          | Over [(Qual Type, Expr)]
+          | Over Id Type [(Scheme, Expr)]
+
+instance Types Binding where
+    tv (Expl (_,_,e)) = tv e
+    tv (Impl (_,e)) = tv e
+
+    apply s (Expl (i,sc,e)) = Expl (i,sc, apply s e)
+    apply s (Impl (i,e)) = Impl (i, apply s e)
+
+instance Types Expr where
+    tv (Abs (_,e)) = tv e
+    tv (Let bg e) = tv bg ++ tv e
+    tv (Ap e1 e2) = tv e1 ++ tv e2
+    tv (Case e as) = tv e ++ concatMap (tv . snd) as
+    tv (Annot e as) = tv e 
+    tv (Over i (TVar t) _) = [t] 
+    tv _ = []
+
+    apply s (Abs (p,e)) = Abs (p, apply s e)
+    apply s (Let bg e) = Let (apply s bg) (apply s e)
+    apply s (Ap e1 e2) = Ap (apply s e1) (apply s e2)
+    apply s (Case e as) = Case (apply s e) $ map (second (apply s)) as
+    apply s (Annot e sc) = Annot (apply s e) sc
+    apply s (Over i t e) = Over i (apply s t) e
+    apply s e = e
+
 
 instance Show Expr where
     show (Lit l) = show l
@@ -53,7 +80,7 @@ instance Show Expr where
     show (Case e as) =  "Case " ++ show e ++ " of" ++ indentedAlt as
     show (Annot e s) = show e ++ " : " ++ show s
     show (Let bg ex) = show "Let " ++ show bg ++ " in " ++ show ex
-    show (Over os)   = show "Overload " ++ concatMap (\(qt,e) -> "\n  " ++ show qt ++  " => " ++ show e) os
+    show (Over i t os)   = show "Overload " ++ i ++ " :" ++ show t ++ ":" ++ concatMap (\(qt,e) -> "\n  " ++ show qt ++  " => " ++ show e) os
 
 showBG (es, is) = indented es ++  indented is
 showAlt (p,ex) = "(" ++ show p ++ ")" ++ " -> " ++ show ex

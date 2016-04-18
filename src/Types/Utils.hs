@@ -175,7 +175,7 @@ tChar = TCons (Tycon "Char" Star)
 tInt = TCons (Tycon "Int" Star)
 tBool = TCons (Tycon "Bool" Star)
 tFloat = TCons (Tycon "Float" Star)
-tList = TAp (TCons (Tycon "[]" (KFun Star Star)))
+tList = TAp (TCons (Tycon "List" (KFun Star Star)))
 tArrow = TCons (Tycon "->" (KFun Star (KFun Star Star)))
 tcons n k = TCons (Tycon n k)
 

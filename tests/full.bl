@@ -2,15 +2,6 @@ data List<a> where
     Cons(a, List<a>)
     Nil()
 
-data Dog where
-    .name : String
-    .owner : String
-    
-data Corgi inherits Dog where
-    .name    : String
-    .owner   : String
-    .royalty : Bool
-
 m<a> is Mappable when
     map (m<a>, <a> -> b) : m<b>
 
@@ -19,6 +10,70 @@ List<a> is Mappable because
         case list of
             Nil -> Nil
             Cons(a,as) -> Cons(fn(a), map(as, fn))
+
+fun main(args) ->
+    print("Hello World!")
+    print( map("hello world!", toUpper))
+
+    print("The factorial of 4 is:")
+    print(factorial(4))
+    print(factorial_(4))
+
+fun factorial(x) -> 
+    case x of
+        1 -> 1
+        _ -> x * factorial(x - 1)
+
+fun factorial_(x) -> product(range(1, x + 1))
+
+fun foldl(list : List<a>, fn : <b,a>->b, acc :b) : b ->
+    case list of
+        Nil -> acc
+        Cons(a,as) -> foldl(as, fn, fn(acc, a))
+
+fun product(list) -> foldl(list, (x, y) -> x * y, 1)
+
+fun range(low,high) -> 
+    case low == high of
+        True -> Nil
+        _ -> Cons(low, range(low + 1, high))
+
+fun id(x) -> 
+    x
+
+Given Num(a)
+fun square(x : a) : a -> 
+    x * x
+
+fun toUpper(char) -> 
+    case char of 
+        'a' -> 'A'
+        'b' -> 'B'
+        'c' -> 'C'
+        'd' -> 'D'
+        'e' -> 'E'
+        'f' -> 'F'
+        'g' -> 'G'
+        'h' -> 'H'
+        'i' -> 'I'
+        'j' -> 'J'
+        'k' -> 'K'
+        'l' -> 'L'
+        'm' -> 'M'
+        'n' -> 'N'
+        'o' -> 'O'
+        'p' -> 'P'
+        'q' -> 'Q'
+        'r' -> 'R'
+        's' -> 'S'
+        't' -> 'T'
+        'u' -> 'U'
+        'v' -> 'V'
+        'w' -> 'W'
+        'x' -> 'X'
+        'y' -> 'Y'
+        'z' -> 'Z'
+        _   -> char
 
 fun foo(list) ->
     case list of
@@ -29,45 +84,3 @@ fun bar(list) ->
     case list of 
         Nil -> print("hello from Bar")
         _ -> foo(list)
-
-/*fun map(list, fn) -> */
-    /*case list of*/
-        /*Nil -> Nil*/
-        /*Cons(a,as) -> Cons(fn(a), map(as, fn))*/
-
-fun foldl(list : List<a>, fn : <b,a>->b, acc :b) : b ->
-    case list of
-        Nil -> acc
-        Cons(a,as) -> foldl(as, fn, fn(acc, a))
-
-fun mult(x,y) -> x * y
-
-fun product(list) -> foldl(list, mult, 1)
-
-fun range(low,high) -> 
-    case (low == high) of
-        True -> Nil
-        _ -> Cons(low, range(low + 1, high))
-
-fun factorial_(x) -> product(range(0,1))
-
-fun factorial(x) -> 
-    case x of
-        1 -> 1
-        _ -> x * factorial(x - 1)
-
-fun id(x) -> 
-    x
-
-Given Num(a)
-fun square(x : a) : a -> 
-    x * x
-
-fun main(args) ->
-    x = 4
-    id(x)
-    print("Hello World!")
-    print("The factorial of 4 is:")
-    print(factorial(1))
-    print(x * x)
-    print(factorial(3))

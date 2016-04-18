@@ -26,24 +26,26 @@ runBlossom file = do
            {-mapM_ print tops-}
            let (ce', as, bg, bs) = validate tops
                ce = ce' `M.union` classes
-           {-mapM_ print as-}
            {-mapM_ (\bg -> print bg >> print "-------------") bg-}
            {-putStrLn "Assumptions:"-}
            {-mapM_ print as-}
            {-putStrLn "Builtin bindings:"-}
            {-mapM_ print bs-}
+           {-putStrLn "Other bindings:"-}
            {-putStrLn "ClassEnv:"-}
            {-print ce-}
            {-putStrLn "Passed PreProcessor"-}
            let assumps = printAs:sqAssump:consAs:nilAs: as ++ defaultAssumps
            {-mapM_ print assumps-}
            let bgs = map fixBG bg
-               as' = tiProgram ce assumps bgs
+               (as',s) = tiProgram ce assumps bgs
                {-binds = map scrubBinds bs ++ map scrubEx es ++ is-}
-           {-print as'-}
            {-mapM_ print binds-}
-           {-interpretBlossom bs False-}
+           let myBinds = map scrubBinds $ bs ++ apply s (flatten bg)
+           {-mapM_ print myBinds-}
+           interpretBlossom myBinds False
            {-mapM_ print as'-}
+           {-mapM_ print (apply s (flatten bg))-}
 
            {-print bs-}
            {-mapM_ print (as ++ defaultAssumps)-}
@@ -59,6 +61,10 @@ runBlossom file = do
 scrubBinds (Expl (i,_,e)) = (i,e)
 scrubBinds (Impl (i,e)) = (i,e)
 scrubEx (i,_,e) = (i,e)
+
+flatten :: [BindGroup] -> [Binding]
+flatten = concatMap flatten' 
+    where flatten' (es, is) =  map Expl es ++ map Impl (concat is)
 
 parseArgs ("-d":f:as) = (True, f, as)
 parseArgs (f:as) = (False, f, as)

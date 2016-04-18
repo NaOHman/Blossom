@@ -7,6 +7,7 @@ import Models.Program
 import qualified Data.Map as M
 import Control.Monad
 import GHC.Exts
+import qualified Types.Utils as T
 import Control.Monad.State
 import Control.Arrow (second)
 import Data.List (intercalate, isSuffixOf, unionBy)
@@ -19,6 +20,7 @@ data Value = VInt Integer
            | VBool Bool
            | VChar Char
            | VNull
+           | VOver Expr
            | VCons String [Value]
            | VLambda [Pat] Expr
            | BuiltIn Id Int ([Value] -> IO Value)
@@ -29,6 +31,7 @@ instance Show Value where
    show (VBool i) = show i 
    show (VChar i) = show i 
    show (VCons i vs) = i ++ "(" ++ intercalate ","  (map show vs) ++ ")"
+   show (VOver ex) = "Over" ++ show ex
    show (BuiltIn n i _) = show n ++ show i
    show (VLambda ps e) = show ps ++ "(" ++ intercalate ","  (map show ps) ++ ")" ++ show e
    show VNull = "Null"
@@ -43,10 +46,13 @@ interpretBlossom ::  [(Id, Expr)] -> Bool -> IO ()
 interpretBlossom bs = evalStateT (runProg bs)
 
 runProg bs =  do 
-    vs <- mapM (\(id,ex) -> eval defScope ex) bs
+    vs <- mapM (\(id,ex) -> eval' id defScope ex) bs
     let sc = Scope $ zip (map fst bs) vs
         (Just (VLambda _ mn)) = lookupScope "main" sc
     void $ eval (sc `add` defScope) mn
+    where eval' _ s e@Over{} = return $ VOver e
+          eval' i@('$':_) s (Abs (ps,e)) = return $ VLambda ps e
+          eval' _ s ex = eval s ex
 
 lookupScope :: Id -> Scope -> Maybe Value
 lookupScope ('#':i) _ = Just $ BuiltIn "Access" 1 (\[VCons _ vs] -> return (vs !! read i))
@@ -83,6 +89,9 @@ eval s (Let bg e) = do
 eval s (Case e cs) = do
     dprint $ "Eval case " ++ show e ++ " of " ++ show cs
     v <- eval s e
+    dprint $ "!!!!!!!!!!!!!!!!"
+    dprint $ "Case evaluated to " ++ show v
+    dprint $ "!!!!!!!!!!!!!!!!"
     pickCase v cs
     where pickCase val [] = fail "Couldn't match pattern" --TODO Return a fail value
           pickCase v (([p],e):cs) = do
@@ -94,15 +103,26 @@ eval s (Case e cs) = do
 
 eval s (Annot e _) = eval s e
 
-eval s (Over ps) = return VNull
+eval s o@(Over i t ps) = do
+    ex <- findMatch t ps
+    eval s ex
+    where findMatch _ [] = fail $ "Over failed to disambiguate" ++ show o
+          findMatch t ((sc,_):es) = 
+             let (qs :=> t') = freshInst sc
+             in case T.match t' t of
+                Nothing -> findMatch t es
+                Just _ -> return $ Var $ "$" ++ i ++ "#" ++ show sc 
+          freshInst s@(Forall ks qt) = 
+            let ts = zipWith (\k n -> TVar $ Tyvar (show n) k) ks [0..]
+            in inst ts qt
+
 
 eval s (Ap e1 e2) = do
-    dprint $ "begin ap eval " ++ show e1 ++ " `ap` " ++ show e2
+    {-dprint $ "begin ap eval " ++ show e1 ++ " `ap` " ++ show e2-}
     evalAp s e1 [e2] 
 
-evalAp s (Ap e1 e2) es = do
-    dprint "two for one"
-    evalAp s e1 (e2:es)
+evalAp s (Ap e1 e2) es = evalAp s e1 (e2:es)
+
 evalAp s f es  = do
     dprint $ "eval " ++ show f ++ " `ap` " ++ show es
     args <- mapM (eval s) es
@@ -113,7 +133,11 @@ evalAp s f es  = do
             unless (length ps == length args)
                     $ fail "function not fully applied"
             let (Just sc) = matches ps args
-            eval (sc `add` s) e
+                sc' = sc `add` s 
+            dprint $ "_____________________"
+            dprint $ show sc'
+            dprint $ "_____________________"
+            eval sc' e
         (BuiltIn n i fn) -> if length args == i 
             then liftIO (fn args)
             else fail $ "Builtin: " ++ n ++ " applied to wrong number of arguments " ++ show es
@@ -147,11 +171,13 @@ lit2Val :: Literal -> Value
 lit2Val (LInt i) = VInt i
 lit2Val (LFloat f) = VFloat f
 lit2Val (LChar c) = VChar c
+lit2Val (LBool b) = VBool b
 lit2Val LNull = VNull
 
 veq (VInt i) (VInt i') = i == i'
 veq (VFloat f) (VFloat f') = f == f'
 veq (VChar c) (VChar c') = c == c'
+veq (VBool b) (VBool b') = b == b'
 veq VNull VNull = True
 veq _ _ = False
 
@@ -179,6 +205,12 @@ bprint [VInt a] = print a >> return VNull
 bprint [VFloat a] = print a >> return VNull
 bprint [VChar a] = print a >> return VNull
 bprint [VBool a] = print a >> return VNull
+bprint [v@(VCons "Cons" [VChar c, _])] = do
+        let cs = extract v
+        putStrLn cs
+        return VNull
+        where extract (VCons "Cons" [VChar c, v]) = c : extract v
+              extract (VCons "Nil" []) = []
 bprint [VCons n vs] = print n >> mapM (bprint . (:[])) vs >> return VNull
 bprint _ = fail "unprintable value"
 

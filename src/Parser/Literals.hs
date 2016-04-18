@@ -42,5 +42,7 @@ lTuple p = do
     let cstr = Var $ "(" ++ replicate (1 + length tail) ',' ++ ")"
     return $ foldl Ap cstr (head:tail)
 
-toList = foldr cons (Var "[nil]") 
-    where cons e = Ap (Ap (Var "[cons]") e )
+toList = foldr cons (Var "Nil") 
+    where cons e = Ap (Ap (Var "Cons") e )
+{-toList = foldr cons (Var "[nil]") -}
+    {-where cons e = Ap (Ap (Var "[cons]") e )-}
