@@ -1,10 +1,28 @@
 {-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts #-} 
+
+{- |
+Module      : Parser.Lexeme
+Description : A Module that provides basic parsing functions, compare to Megaparsec.Lexer
+Copyright   : (c) Jeffrey Lyman
+Liscense    : TBD
+
+Maintainer  : JeffreyTLyman@gmail.com
+Stability   : experimental
+Portability : portable
+
+This module provides all sorts of nice utility functions to help you parse things.
+-}
+
+
 module Parser.Lexeme 
    ( BParser()
+   , getTV
+   , putTV
    , symbol
    , lexeme
    , opList
    , block
+   , inlineBlock
    , parens
    , singleQuotes
    , doubleQuotes
@@ -24,12 +42,24 @@ import qualified Text.Megaparsec.Lexer as L
 
 --------------------------- General Declaration -----------------------
 
-type BParser a = StateT Int (Parsec String) a
+type BParser a = StateT (Int,Int) (Parsec String) a
+
+getIndent = snd <$> get
+
+savePos :: BParser ()
+savePos = do
+    (tv,_) <- get 
+    pos <- getPosition
+    put (tv, sourceColumn pos)
+
+getTV = fst <$> get
+putTV i = do 
+    (_,p) <- get
+    put (i,p)
 
 symbol :: String -> BParser String
 symbol = L.symbol sc 
 
-gp = getPosition
 
 opList p = F.concat <$> optional p
 
@@ -41,7 +71,8 @@ sc = L.space (void $ oneOf " \t") lineCmnt blockCmnt
 
 indentSC :: BParser ()
 indentSC = L.space indentConsumer lineCmnt blockCmnt
-    where indentConsumer = void (oneOf " \t") <|> eol_
+    where indentConsumer = void (oneOf " \t") <|> void newIndent
+          newIndent = eol_ >> many (oneOf " \t") >> savePos
 
 lineCmnt  = L.skipLineComment inlineComment
     where inlineComment = "//"
@@ -65,50 +96,26 @@ csl p = parens (sepBy p (symbol ","))
 
 opCsl p = parens (sepBy p (symbol ",")) <|> return []
 
-{-indentGuard i = getPosition >>= \p -> -}
-    {-when (sourceColumn p /= i) (fail "incorrect indentation")-}
+inlineBlock item = try (return <$> item) <|> block item
 
-{-iBlock p = try (pure <$> p) <|> try (block p)-}
-    {-where onlyInline p = do-}
-            {-oldlvl <- get -}
-            {-result <- p-}
-            {-done <- optional eof-}
-            {-case done of -}
-                {-Just _ -> return [result]-}
-                {-Nothing -> do-}
-                    {-indentSC-}
-                    {-newlvl <- get-}
-                    {-if newlvl <= oldlvl then-}
-                        {-return [result]-}
-                    {-else-}
-                        {-fail "Improper indendation"-}
+block :: BParser b -> BParser [b] 
+block item = do
+    oldlvl <- getIndent
+    indentSC
+    newlvl <- getIndent
+    if newlvl > oldlvl then
+        indentedItems oldlvl newlvl item
+    else 
+        fail $ "Not indented old " ++ show oldlvl ++ " new " ++ show newlvl
 
-{-block p = indentBlock (return $ L.IndentSome Nothing return p)-}
-{-block header item = L.indentBlock indentSC p -- <?> "Indent failed"-}
-    {-where p = return $ L.IndentSome Nothing header item-}
-
-block f header item = L.indentBlock indentSC p 
-    where p = do h <- header
-                 return (L.IndentSome Nothing (return . f h) item)
-
-{-block :: BParser b -> BParser [b] -}
-{-block item = do-}
-    {-oldlvl <- get-}
-    {-indentSC-}
-    {-newlvl <- get-}
-    {-if newlvl > oldlvl then-}
-        {-indentedItems oldlvl newlvl item-}
-    {-else -}
-        {-fail $ "Not indented old " ++ show oldlvl ++ " new " ++ show newlvl-}
-
-{-indentedItems :: Int -> Int -> BParser a -> BParser [a]-}
-{-indentedItems ref lvl p = re lvl-}
-    {-where go = indentSC >> get >>= re-}
-          {-re pos-}
-             {-| pos <= ref = return []-}
-             {-| pos == lvl = (:) <$> p <*> go-}
-             {-| otherwise  = do-}
-                    {-done <- optional eof-}
-                    {-case done of-}
-                        {-Just _ ->  return []-}
-                        {-otherwise -> fail "Incorrect Indentation"-}
+indentedItems :: Int -> Int -> BParser a -> BParser [a]
+indentedItems ref lvl p = re lvl
+    where go = indentSC >> getIndent >>= re
+          re pos
+             | pos <= ref = return []
+             | pos == lvl = (:) <$> p <*> go
+             | otherwise  = do
+                    done <- optional eof
+                    case done of
+                        Just _ ->  return []
+                        _ -> fail "Incorrect Indentation"

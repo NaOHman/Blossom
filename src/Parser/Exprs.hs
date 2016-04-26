@@ -58,15 +58,19 @@ eLet = try $ do
               Just s -> Let [Expl (i, quantAll s, ex)] eUnit
               _ -> Let [Impl (i, ex)] eUnit
 
-eCase = block Case header branch
+eCase = Case <$> header <*> inlineBlock branch
     where header = case_ *> expr <* of_
-          branch = exblock (,) ((:[]) <$> (pat <* arrow_))
+          branch = do
+            pat <- pat <* arrow_
+            ex <- exblock
+            return ([pat], ex)
    
 eAnnot = Annot <$> expr <*> (quantAll <$> sufCons)
 
 lambda :: BParser (Alt, Maybe (Qual Type))
-lambda = do ((pat, mt), ex) <- exblock (,) args
-            return ((pat, ex), mt)
+lambda = do (pat, mt) <- args
+            ex <- exblock
+            return ((pat,ex), mt)
 
 args :: BParser ([Pat], Maybe (Qual Type))
 args = do 
@@ -85,9 +89,9 @@ operators = [
          [uOp "not"],
          [bOp "and", bOp "or", bOp "xor"]]
 
-exblock ::  (a -> Expr -> b) -> BParser a -> BParser b 
-exblock f h = try (f <$> h <*> expr) <|> try (block f' h expr)
-    where f' d es = f d (chain es)
+exblock ::  BParser Expr
+exblock = chain <$> inlineBlock expr
+    {-where f' d es = f d (chain es)-}
 
 chain [e] = e 
 chain (Let bg (Lit LNull):es) = Let bg (chain es)
@@ -121,8 +125,8 @@ funcAnnot ts (Just rt) = do
     return $ Just $ args `mkQualFn` rt
 
 newTVar :: Kind -> BParser Type
-newTVar k = do i <- get
-               put (i+1)
+newTVar k = do i <- getTV
+               putTV (i+1)
                return (TVar $ Tyvar ("!var" ++ show i) k)
 
 toVars :: [Maybe (Qual Type)]  -> BParser [Qual Type]

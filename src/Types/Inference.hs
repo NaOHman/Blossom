@@ -5,7 +5,7 @@ import LangDef.Blossom
 import Types.Utils
 import Models.Program
 import Models.Expressions
-import PreProcessor.PreProcessor (splitImpl)
+import PreProcessor.Bindings (splitImpl)
 import Text.Megaparsec
 import Data.List (nub, union, intersect, partition, (\\))
 import Data.Maybe (fromMaybe, isJust, isNothing)

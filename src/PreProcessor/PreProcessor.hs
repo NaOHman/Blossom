@@ -2,67 +2,17 @@
 module PreProcessor.PreProcessor where
 
 import Models.Program
+import Models.PreProcessor
+import PreProcessor.Bindings
 import Types.Utils hiding (find)
-import Control.Monad (foldM)
-import Control.Monad.Trans
-import Control.Monad.Trans.Either
 import Control.Monad.State
 import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 import Data.List (find, sort, delete, (\\), nub, partition)
 import Data.Maybe (isJust)
-import Data.Char (isLower)
 import GHC.Exts (groupWith)
-import Data.Graph hiding (scc)
-import Data.Graph.SCC
-
-type PP a = State Int a
 
 validate ts = evalState (preprocess ts) 0
-
-splitBindings :: [Binding] -> [BindGroup]
-splitBindings bs = reverse $ map splitImpl $ depGroups [] bs
-
-splitImpl :: [Binding] -> BindGroup
-splitImpl bs =
-            let (es, is) = splitBinds bs
-                eIds = map (\(i,_,_) -> i) es
-                iGroups = depGroups eIds (map Impl is)
-                iBinds = map (map (\(Impl tpl) -> tpl)) iGroups
-            in (es, iBinds)
-        
-
-depGroups :: [Id] -> [Binding] -> [[Binding]]
-depGroups ids bs = 
-    let edges = map (findDeps ids) bs
-        (dGraph, mapping, _) = graphFromEdges edges
-        (components, _) = scc dGraph
-        vertices = map snd components
-        nodev (b,_,_) = b
-    in map (map (nodev . mapping)) vertices
-        
-findDeps ids b@(Impl(i,e)) = (b, i, userVars e \\ (i:ids)) 
-findDeps ids b@(Expl(i,_,e)) = (b, i, userVars e \\ (i:ids)) 
-
-userVars :: Expr -> [Id]
-userVars (Var i@(c:_)) 
-    | isLower c = [i | i /= "print"]
-    | otherwise = []
-userVars (Abs (ps,e)) = userVars e \\ nub (concatMap pvar ps)
-userVars (Ap e1 e2) = nub $ userVars e1 ++ userVars e2
-userVars (Let bs e) = let ids = map bindingName bs
-                          es  = map exprOf bs
-                      in nub (userVars e ++ concatMap userVars es) \\ ids
-userVars (Case e bs) = nub $ userVars e ++ concatMap (userVars . Abs) bs
-userVars (Annot e _) = userVars e
-userVars _ = []
--- overloaded functions don't really count as user vars for our purposes
-
-pvar (PVar v) = [v]
-pvar (PAs v p) = v : pvar p
-pvar (PCons _ ps) = nub $ concatMap pvar ps
-pvar _ = []
-                           
+                          
 preprocess :: [Top] -> PP (ClassEnv, [Assump], [BindGroup], [Binding])
 preprocess ts = do
     let (bnds, rdt, adt, bvs, imps) = splitTops ts
@@ -89,7 +39,7 @@ preprocess ts = do
         aNames = concatMap dNames adt
         rNames = concatMap dNames rdt
         bNames = behaviorNames ce
-        nNames = map bindingName (binds ++ impBinds)
+        nNames = map bindName (binds ++ impBinds)
         names = aNames ++ rNames ++ bNames ++ nNames
     {-unless (uniq names) (fail "Duplicate name found")-}
     {-fullAp (map dTCons adt ++ map dTCons rdt) binds-}
@@ -98,7 +48,7 @@ preprocess ts = do
     bs' <- replaceOverVars stubs binds
     {-let (es,is) = splitBinds binds-}
     {-let eassumps = map (\(i,sc,_) -> i :>: sc) es-}
-    return (ce, assumps, splitBindings bs', impBinds)
+    return (ce, assumps, toBindGroup bs', impBinds)
 
 replaceOverVars :: [Stub] -> [Binding] -> PP [Binding]
 replaceOverVars ss = mapM (repOV ss) 
@@ -135,15 +85,6 @@ overBinds = M.foldMapWithKey f
           unpack cls (i,_,ps) = map (\(sc,e) -> Expl (implName i sc, sc, e)) ps
 
 implName i sc = "$" ++ i ++  "#" ++ show sc
-
-{-unpack :: Id -> (Id, Scheme, [(Qual Type, Expr)]) -> [Binding]-}
-{-unpack cls (i, sc@(Forall ks (q:=>t)), ps) = -}
-    {-let ([IsIn _ [TGen n]],qs) = partition qualFilter q-}
-    {-in map (bnd n (Forall ks (qs:=>t))) ps-}
-    {-where qualFilter (IsIn i _) = i == cls-}
-          {-bnd n sc (qt, ex) = -}
-              {-let sch = pInst qt n sc-}
-              {-in Expl (implName i qt, sch, ex)-}
 
 pInst :: Id -> Qual Type -> Scheme -> Scheme
 pInst cls (q:=>t) (Forall ks (ps:=>st)) = 
@@ -257,7 +198,6 @@ bindSup cls (bs,stubs) r@(Rec q t _ ss) = do
     unless (length stubs == length over) 
            (fail "Must include all fields of super type")
     let stbs = foldl (addStub cls (q :=> t)) stubs obs
-    {-return stbs-}
     return (under ++ bs, stbs)
     where inStubs (b,s,_) = isJust (find (\(i,_,_) -> i == b) stubs)
 
@@ -305,13 +245,7 @@ overBehavior bs@((i,_, _):_) = do
                 return $ qs :=> IsIn cls [t]
           bindPairs (_, sc, ex) = if null (tv sc)
                 then return (sc,ex)
-                {-then (do qt <- freshInst sc-}
-                         {-return (qt,ex))-}
                 else fail $ "Incomplete type signature for "++i
-
-splitBinds = foldl f ([],[]) 
-    where  f (es, is) (Expl e) = (e:es,is) 
-           f (es, is) (Impl i) = (es,i:is)
 
 freshInst :: Scheme -> PP (Qual Type)
 freshInst (Forall ks qt) = do ts <- mapM newTVar ks
@@ -320,9 +254,6 @@ freshInst (Forall ks qt) = do ts <- mapM newTVar ks
 consName (TAp t _) = consName t
 consName (TCons (Tycon n _)) = n
 
-bindingName (Expl (i,_,_)) = i
-bindingName (Impl (i,_)) = i
-
 behaviorNames = M.keys
 
 fullAp :: [Tycon] -> [Binding] -> PP ()
@@ -330,13 +261,9 @@ fullAp _ _ = return ()
 
 genMain :: [Binding] -> PP Expr
 genMain bs = do
-    let (m, bs') = split (("main" ==) . bindingName) bs
+    let (m, bs') = split (("main" ==) . bindName) bs
     unless (length m == 1) (fail "Could not find main")
-    return $ Let bs' (exprOf $ head m)
-    
-exprOf :: Binding -> Expr
-exprOf (Impl (_,e)) = e
-exprOf (Expl (_,_,e)) = e
+    return $ Let bs' (bindExpr $ head m)
     
 newTVar k = do i <- get
                let v = "&var" ++ show i

@@ -1,4 +1,18 @@
-{-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts #-} 
+{- |
+Module      : Parser.Identifiers
+Description : The parsers for Blossom keywords and identifiers
+Copyright   : (c) Jeffrey Lyman
+Liscense    : TBD
+
+Maintainer  : JeffreyTLyman@gmail.com
+Stability   : experimental
+Portability : portable
+
+This module provides parsers for all keywords. All parsers have an underscore suffix to 
+prevent clashes with haskell keywords. Ex. the parser for if is called if_. These keywords
+parsers are necessary to avoid restricted word errors.
+-}
+
 module Parser.Identifiers 
    ( is_, because_, inherits_, given_, if_, elif_, then_, else_, when_, where_
    , data_, case_, type_, of_, arrow_, equals_, comma_, dot_, colon_, fun_

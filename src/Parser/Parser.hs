@@ -22,7 +22,7 @@ test fname = do
         Right bs -> mapM_ print bs
         Left err -> print err
 
-blossomParser = evalStateT blossom 0
+blossomParser = evalStateT blossom (0,1)
 
 top = nonIndented $ choice [gVar, fBind, behavior, implem, adt, rdt]
 
@@ -41,53 +41,60 @@ gVar = try $ Bind <$> do
         Just qt -> Expl (name, quantAll qt, ex)
         _      -> Impl (name, ex)
   
-fBind = try $ Bind <$> fDec
-fDec = exblock f header
-    where header = do 
-              q <- try topQual
-              n <- fun_ *> lName
-              (p, mqt) <- args
-              return (p, case mqt of
-                  Just (qs :=> t) -> let sch = quantUser ((q ++ qs) :=> t)
-                                     in (Expl . (n, sch,))
-                  Nothing -> Impl . (n,))
-          f (p,fn) ex = fn (Abs (p, ex))
+fBind = Bind <$> fDec
+fDec = try $ do 
+      q <- try topQual
+      n <- fun_ *> lName
+      (p, mqt) <- args
+      ex <- exblock
+      let lam = Abs (p, ex)
+      return $ case mqt of
+          Just (qs :=> t) -> let sch = quantUser ((q ++ qs) :=> t)
+                             in (Expl (n, sch, lam))
+          Nothing -> Impl (n, lam)
 
-adt = try $ ADT <$> try (block ($) header cStub)
-    where header = Adt <$> topQual <*> (data_ *> vCons <* where_)
-          cStub = (,) <$> uName <*> opList (csl ptype)
+adt = try $ do
+    q <- topQual 
+    tcon <- (data_ *> vCons <* where_)
+    stubs <- block ((,) <$> uName <*> opList (csl ptype))
+    return $ ADT $ Adt q tcon stubs
+          {-cStub = (,) <$> uName <*> opList (csl ptype)-}
 
-rdt = RDT <$> try (block ($) header field)
-    where header = do q <- topQual 
-                      t <- data_ *> vCons
-                      ss <- superTypes <* where_
-                      return (Rec q t ss)
-          field = do fname <- dot_  *> lName
-                     t <- colon_ *> ptype
-                     return ('_':fname, t)
-          superTypes = opList (inherits_ *> sepBy1 vCons comma_)
+rdt = try $ do 
+    q <- topQual 
+    t <- data_ *> vCons
+    sts <- opList (inherits_ *> sepBy1 vCons comma_) <* where_
+    fs <- block field
+    return $ RDT $ Rec q t sts fs
 
-behavior = Bvr <$> try (block ($) header stub)
-    where header = try $ do 
-              q <- topQual
-              t <- vVar
-              name <- is_ *> uName <* when_
-              return (Bhvr q t name)
-          stub = do 
-              name <- lName 
-              ts <- optional $ csl ptype
-              rt <- colon_ *> ptype
-              return (name, case ts of
+field = do 
+    fname <- dot_  *> lName
+    t <- colon_ *> ptype
+    return ('_':fname, t)
+
+behavior = try $ do
+      q <- topQual
+      t <- vVar
+      name <- is_ *> uName <* when_
+      stubs <- block stub
+      return $ Bvr (Bhvr q t name stubs)
+
+stub = do 
+    name <- lName 
+    ts <- optional $ csl ptype
+    rt <- colon_ *> ptype
+    return (name, case ts of
                   Just ts -> ts `mkFun` rt
                   Nothing -> rt)
 
-implem = Imp <$> try (block ($) header fDec')
-    where fDec' = do bs <- fDec
-                     return $ toImpl bs 
-          toImpl (Expl (i,_,e)) = (i,e)
-          toImpl (Impl i) = i
-          header = try $ do 
-              q <- topQual
-              t <- ptype
-              bhvr <- is_ *> uName <* because_
-              return (Im q t bhvr)
+implem = try $ do
+      q <- topQual
+      t <- ptype
+      bhvr <- is_ *> uName <* because_
+      impls <- block impl
+      return $ Imp (Im q t bhvr impls)
+
+impl =  do b <- fDec
+           case b of 
+                Impl i -> return i
+                _ -> fail "Don't specify the types of your implementations"

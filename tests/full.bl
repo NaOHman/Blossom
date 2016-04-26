@@ -2,12 +2,11 @@ data Tree<a> where
     Node(a, Tree<a>, Tree<a>)
     Empty
 
-/*m<a> is Mappable when*/
-    /*map(m<a>, <a> -> b) : m<b>*/
+m<a> is Mappable when
+    map(m<a>, <a> -> b) : m<b>
 
-/*Tree<a> is Mappable because*/
-fun map(tree : Tree<a>, fn : <a> -> b) : Tree<b> -> 
-    case tree of 
+Tree<a> is Mappable because
+    fun map(tree, fn) -> case tree of 
         Node(data, left, right) -> 
             data_ = fn(data)
             left_ = map(left, fn)
@@ -15,83 +14,78 @@ fun map(tree : Tree<a>, fn : <a> -> b) : Tree<b> ->
             Node(data_, left_, right_)
         Empty -> Empty
 
-/*[a] is Mappable because*/
-fun map(list : [a], fn : <a> -> b) : [b] -> 
-    case list of
+[a] is Mappable because
+    fun map(list, fn) -> case list of
         [] -> []
         [a|as] -> [fn(a) | map(as, fn)]
 
-/*fun main(args) ->*/
-    /*print("Hello World!")*/
-    /*print(map("hello world!", toUpper))*/
-    /*print("The factorial of 4 is:")*/
-    /*print(factorial(4))*/
-    /*print(factorial_(4))*/
+fun main(args) ->
+    print("Hello World!")
+    print(map("hello world!", toUpper))
+    print("The factorial of 4 is:")
+    print(factorial(4))
+    print(factorial_(4))
 
-/*fun factorial(x) -> */
-    /*case x of*/
-        /*1 -> 1*/
-        /*_ -> x * factorial(x - 1)*/
+fun factorial(x) -> 
+    case x of
+        1 -> 1
+        _ -> x * factorial(x - 1)
 
-/*fun factorial_(x) -> product(range(1, x + 1))*/
+fun factorial_(x) -> product(range(1, x + 1))
 
-/*fun foldl(list : [a], fn : <b,a>->b, acc :b) : b ->*/
-    /*case list of*/
-        /*[] -> acc*/
-        /*[a|as] -> foldl(as, fn, fn(acc, a))*/
+fun foldl(list : [a], fn : <b,a>->b, acc :b) : b -> case list of
+    [] -> acc
+    [a|as] -> foldl(as, fn, fn(acc, a))
 
-/*fun product(list) -> foldl(list, (x, y) -> x * y, 1)*/
+fun product(list) -> foldl(list, (x, y) -> x * y, 1)
 
-/*fun id(x) -> */
-    /*x*/
+fun id(x) -> 
+    x
 
-/*Given Num(a)*/
-/*fun square(x : a) : a -> */
-    /*x * x*/
+Given Num(a)
+fun square(x : a) : a -> 
+    x * x
 
-/*fun toUpper(char) -> */
-    /*case char of */
-        /*'a' -> 'A'*/
-        /*'b' -> 'B'*/
-        /*'c' -> 'C'*/
-        /*'d' -> 'D'*/
-        /*'e' -> 'E'*/
-        /*'f' -> 'F'*/
-        /*'g' -> 'G'*/
-        /*'h' -> 'H'*/
-        /*'i' -> 'I'*/
-        /*'j' -> 'J'*/
-        /*'k' -> 'K'*/
-        /*'l' -> 'L'*/
-        /*'m' -> 'M'*/
-        /*'n' -> 'N'*/
-        /*'o' -> 'O'*/
-        /*'p' -> 'P'*/
-        /*'q' -> 'Q'*/
-        /*'r' -> 'R'*/
-        /*'s' -> 'S'*/
-        /*'t' -> 'T'*/
-        /*'u' -> 'U'*/
-        /*'v' -> 'V'*/
-        /*'w' -> 'W'*/
-        /*'x' -> 'X'*/
-        /*'y' -> 'Y'*/
-        /*'z' -> 'Z'*/
-        /*_   -> char*/
+fun toUpper(char) -> case char of 
+    'a' -> 'A'
+    'b' -> 'B'
+    'c' -> 'C'
+    'd' -> 'D'
+    'e' -> 'E'
+    'f' -> 'F'
+    'g' -> 'G'
+    'h' -> 'H'
+    'i' -> 'I'
+    'j' -> 'J'
+    'k' -> 'K'
+    'l' -> 'L'
+    'm' -> 'M'
+    'n' -> 'N'
+    'o' -> 'O'
+    'p' -> 'P'
+    'q' -> 'Q'
+    'r' -> 'R'
+    's' -> 'S'
+    't' -> 'T'
+    'u' -> 'U'
+    'v' -> 'V'
+    'w' -> 'W'
+    'x' -> 'X'
+    'y' -> 'Y'
+    'z' -> 'Z'
+    _   -> char
 
-/*fun foo(list) ->*/
-    /*case list of*/
-        /*[] -> bar(list)*/
-        /*_ -> print("Hello World")*/
+fun foo(list) -> case list of
+    [] -> bar(list)
+    _ -> print("Hello World")
 
-/*fun range(low,high) -> */
-    /*next = low + 1*/
-    /*var = low >= high*/
-    /*case var of*/
-        /*True -> []*/
-        /*False -> [low | range(next, high)]*/
+fun range(low,high) -> 
+    next = low + 1
+    var = low >= high
+    case var of
+        True -> []
+        False -> [low | range(next, high)]
 
-/*fun bar(list) -> */
-    /*case list of */
-        /*[] -> print("hello from Bar")*/
-        /*_ -> foo(list)*/
+fun bar(list) -> case list of 
+    [] -> print("hello from Bar")
+    _ -> foo(list)
