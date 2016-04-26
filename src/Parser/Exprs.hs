@@ -10,11 +10,13 @@ module Parser.Exprs
    ) where
 
 import Parser.Core
+import Parser.Patterns
+import LangDef.Sugar
 import Data.Maybe
 import Models.Expressions
 import Parser.Literals
 import Types.Utils
-import Parser.Constraints
+import Parser.Types
 import Control.Monad (liftM, foldM)
 import Control.Monad.State
 import Text.Megaparsec
@@ -26,7 +28,7 @@ term = choice [eAbs, eCase, eAp, eLet, eLit, terminating eVar, parens expr]
 
 terminating p = try p <* notFollowedBy (char '.' <|> char '(')
 
-eLit = Lit <$> literal <|> litSugar
+eLit = Lit <$> literal <|> lString <|> eList expr <|> eTup expr
     where litSugar = lString
 
 eVar = Var <$> try aName
@@ -75,18 +77,11 @@ args = do
     return (p, mt)
     where arg = (,) <$> lName <*> opSufCons
 
-
-pat  =  try (PCons <$> uName <*> (try (csl pat) <|> return []))
-    <|> try (PAs   <$> (lName <* char '#') <*> pat)
-    <|> try (PLit  <$> literal)
-    <|> try (PVar  <$> lName)
-    <|> try (symbol "_" >> return PNil)
-
 operators = [
 {-[uOp "+", uOp "-"],-}
          [bOp "*", bOp "/", bOp "//", bOp "%"],
          [bOp "+", bOp "-"],
-         [bOp "==", bOp "<", bOp "<=", bOp ">", bOp ">="],
+         [bOp "==", bOp "<=", bOp "<", bOp ">=", bOp ">"],
          [uOp "not"],
          [bOp "and", bOp "or", bOp "xor"]]
 
@@ -103,7 +98,7 @@ uOp s = Prefix $ try $
        return (opAp (s++"UN"))
 
 bOp s = InfixL $ try $
-    rword s *> notFollowedBy (symbol ">") *>
+    rword s *> notFollowedBy (symbol "=") *>
         return (\e1 e2 -> Ap (opAp s e1) e2)
 
 opAp s = Ap (Var s)

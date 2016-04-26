@@ -1,6 +1,7 @@
 module Types.Inference where
 
 import Models.Types
+import LangDef.Blossom
 import Types.Utils
 import Models.Program
 import Models.Expressions

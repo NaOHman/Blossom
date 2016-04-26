@@ -84,7 +84,7 @@ preprocess ts = do
         impl' = map Impl impl
         consBinds = constrBinds constructors
         impBinds = fbs ++ consBinds ++ stubBins
-        binds = impl' ++ expl'  ++ overBinds bhCE
+        binds = impl' ++ expl'  ++ overBinds ce
 
         aNames = concatMap dNames adt
         rNames = concatMap dNames rdt

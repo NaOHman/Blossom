@@ -8,7 +8,7 @@ import Types.Utils
 import Models.Program
 import Text.Megaparsec
 import Models.Expressions
-import Parser.Constraints
+import Parser.Types
 import qualified Data.Map as M
 import qualified Data.List as L
 import Control.Monad (void, foldM, ap, liftM)

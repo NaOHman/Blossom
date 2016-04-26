@@ -108,24 +108,6 @@ scEntail :: ClassEnv -> [Pred] -> Pred -> Bool
 scEntail ce ps p = any (p `elem`) (map (bySuper ce) ps)
 
 
-{-bySuper :: ClassEnv -> Pred -> [Pred]-}
-{-bySuper ce p@(IsIn i t) = -}
-    {-p : concat [bySuper ce (IsIn i' t) | i' <- super ce i]-}
-
-{-byInst :: ClassEnv -> Pred -> Maybe [Pred]-}
-{-byInst ce p@(IsIn i t) = msum [tryInst it | it <- insts ce i]-}
-    {-where tryInst (ps:=>h) = do u <- matchPred h p-}
-                                {-Just (map (apply u) ps)-}
-
---does a list of predicates imply this predicate?
-{-entail :: ClassEnv -> [Pred] -> Pred -> Bool-}
-{-entail ce ps p = scEntail ce ps p || case byInst ce p of-}
-                          {-Nothing -> False-}
-                          {-Just qs -> all (entail ce ps) qs-}
-
-{-scEntail :: ClassEnv -> [Pred] -> Pred -> Bool-}
-{-scEntail ce ps p = any (p `elem`) (map (bySuper ce) ps)-}
-
 --context reduction garbage
 isInHnf :: Pred -> Bool
 isInHnf (IsIn _ ts) = all hnf ts
@@ -162,35 +144,20 @@ find i [] = fail $ "Unbound variable " ++ show i
 find i ((i':>:sc) : as) | i == i' = return sc
                         | otherwise = find i as
 
-kGen :: Id -> Int -> Type
-kGen id k = foldl tAp' (TCons $ Tycon id (kAry k)) [0..k]
-    where tAp' t i = TAp t (TGen i)
+{-kGen :: Id -> Int -> Type-}
+{-kGen id k = foldl tAp' (TCons $ Tycon id (kAry k)) [0..k]-}
+    {-where tAp' t i = TAp t (TGen i)-}
 
-a `func` b = TAp (TAp tArrow a) b
-tUnit = TCons (Tycon "()" Star)
-tNull = TCons (Tycon "Null" Star)
-tType = TCons (Tycon "Type" Star)
-tString = tList tChar
-tChar = TCons (Tycon "Char" Star)
-tInt = TCons (Tycon "Int" Star)
-tBool = TCons (Tycon "Bool" Star)
-tFloat = TCons (Tycon "Float" Star)
-tList = TAp (TCons (Tycon "List" (KFun Star Star)))
-tArrow = TCons (Tycon "->" (KFun Star (KFun Star Star)))
-tcons n k = TCons (Tycon n k)
 
 assume :: [Tyvar] -> Id -> Type -> Assump
 assume tv id t = id :>: quantify tv ([] :=> t)
 
-mkFun ts t = foldr func t ts
 mkQualFn qts qt = foldr qualFn qt qts
 qualFn (q1 :=> t1) (q2 :=> t2) = (q1 ++ q2) :=> (t1 `func` t2)
 
 mkCons n k = TCons $ Tycon n k
 mkVar n k = TVar $ Tyvar n k
 
-kAry 0 = Star
-kAry n = KFun Star (kAry (n-1))
 
 instance Data Adt where
     dQual = aqual
@@ -218,3 +185,6 @@ instance Data Rec where
         in [(n, quantQual q ft)]
 
 
+tArrow = TCons $ Tycon "->" (KFun Star (KFun Star Star))
+a `func` b = TAp (TAp tArrow a) b
+mkFun ts t = foldr func t ts

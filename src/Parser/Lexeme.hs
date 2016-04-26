@@ -12,6 +12,7 @@ module Parser.Lexeme
    , angles
    , angles1
    , csl
+   , opCsl
    , eol_
    , nonIndented
    ) where
@@ -61,6 +62,8 @@ brackets = between (symbol "[") (symbol "]")
 angles p = between (symbol "<") (symbol ">") (sepBy p (symbol ","))
 angles1 p = between (symbol "<") (symbol ">") (sepBy1 p (symbol ","))
 csl p = parens (sepBy p (symbol ","))
+
+opCsl p = parens (sepBy p (symbol ",")) <|> return []
 
 {-indentGuard i = getPosition >>= \p -> -}
     {-when (sourceColumn p /= i) (fail "incorrect indentation")-}

@@ -57,7 +57,7 @@ runProg bs =  do
 lookupScope :: Id -> Scope -> Maybe Value
 lookupScope ('#':i) _ = Just $ BuiltIn "Access" 1 (\[VCons _ vs] -> return (vs !! read i))
 lookupScope i@(c:_) (Scope sc) 
-    | isUpper c = Just $ VCons i []
+    | isUpper c || c == '[' || c == '(' = Just $ VCons i []
     | otherwise = lookup i sc
 
 
@@ -89,9 +89,9 @@ eval s (Let bg e) = do
 eval s (Case e cs) = do
     dprint $ "Eval case " ++ show e ++ " of " ++ show cs
     v <- eval s e
-    dprint $ "!!!!!!!!!!!!!!!!"
+    dprint  "!!!!!!!!!!!!!!!!"
     dprint $ "Case evaluated to " ++ show v
-    dprint $ "!!!!!!!!!!!!!!!!"
+    dprint  "!!!!!!!!!!!!!!!!"
     pickCase v cs
     where pickCase val [] = fail "Couldn't match pattern" --TODO Return a fail value
           pickCase v (([p],e):cs) = do
@@ -118,7 +118,7 @@ eval s o@(Over i t ps) = do
 
 
 eval s (Ap e1 e2) = do
-    {-dprint $ "begin ap eval " ++ show e1 ++ " `ap` " ++ show e2-}
+    dprint $ "begin ap eval " ++ show e1 ++ " `ap` " ++ show e2
     evalAp s e1 [e2] 
 
 evalAp s (Ap e1 e2) es = evalAp s e1 (e2:es)
@@ -134,9 +134,9 @@ evalAp s f es  = do
                     $ fail "function not fully applied"
             let (Just sc) = matches ps args
                 sc' = sc `add` s 
-            dprint $ "_____________________"
+            dprint "_____________________"
             dprint $ show sc'
-            dprint $ "_____________________"
+            dprint "_____________________"
             eval sc' e
         (BuiltIn n i fn) -> if length args == i 
             then liftIO (fn args)
@@ -205,12 +205,12 @@ bprint [VInt a] = print a >> return VNull
 bprint [VFloat a] = print a >> return VNull
 bprint [VChar a] = print a >> return VNull
 bprint [VBool a] = print a >> return VNull
-bprint [v@(VCons "Cons" [VChar c, _])] = do
+bprint [v@(VCons "[cons]" [VChar c, _])] = do
         let cs = extract v
         putStrLn cs
         return VNull
-        where extract (VCons "Cons" [VChar c, v]) = c : extract v
-              extract (VCons "Nil" []) = []
+        where extract (VCons "[cons]" [VChar c, v]) = c : extract v
+              extract (VCons "[nil]" []) = []
 bprint [VCons n vs] = print n >> mapM (bprint . (:[])) vs >> return VNull
 bprint _ = fail "unprintable value"
 

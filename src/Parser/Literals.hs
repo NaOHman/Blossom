@@ -1,6 +1,6 @@
 {-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts, GADTs #-}
 
-module Parser.Literals (literal, lString) where
+module Parser.Literals (literal, escapedChar) where
 
 import Parser.Core
 import Models.Expressions
@@ -26,23 +26,3 @@ escapedChar = char '\\' >> choice (zipWith escape codes reps) <?> "Bad escape co
     where escape c r = char c >> return r
           codes = "ntr\\\"'" 
           reps = "\n\t\r\\\"'" 
-
---------------------- Sugar ------------------------------------------
-
-lString :: BParser Expr
-lString = toList <$> doubleQuotes (many stringChar)
-    where stringChar = Lit . LChar <$> (escapedChar <|> noneOf "\"\\\n\t\r")
-
-lArray p = toList <$> brackets (sepBy p comma_)
-
--- Parses a Tuple literal 
-lTuple p = do 
-    head <- p <* comma_
-    tail <- sepBy1 p comma_
-    let cstr = Var $ "(" ++ replicate (1 + length tail) ',' ++ ")"
-    return $ foldl Ap cstr (head:tail)
-
-toList = foldr cons (Var "Nil") 
-    where cons e = Ap (Ap (Var "Cons") e )
-{-toList = foldr cons (Var "[nil]") -}
-    {-where cons e = Ap (Ap (Var "[cons]") e )-}

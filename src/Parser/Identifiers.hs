@@ -6,6 +6,7 @@ module Parser.Identifiers
    , lName, aName, uName, rword
    ) where
 
+import Control.Monad (void)
 import Parser.Lexeme
 import Text.Megaparsec
 import Text.Megaparsec.String
@@ -34,7 +35,7 @@ false_ = rword "False"
 arrow_ = symbol "->"
 equals_ = symbol "="
 comma_ = symbol ","
-dot_ = symbol "."
+dot_ = void $ symbol "."
 colon_ = symbol ":"
 fun_ = rword "fun" 
 curry_ = rword "curry" 
