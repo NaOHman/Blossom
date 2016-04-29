@@ -37,12 +37,12 @@ preprocess (Program bnds imps adt rdt bvs) = do
         impBinds = fbs ++ consBinds ++ stubBins
         binds = impl' ++ expl'  ++ overBinds ce
 
-        aNames = concatMap dNames adt
-        rNames = concatMap dNames rdt
-        bNames = behaviorNames ce
-        nNames = map bindName (binds ++ impBinds)
-        names = aNames ++ rNames ++ bNames ++ nNames
-    unless (uniq names) (fail "Duplicate name found")
+        {-aNames = concatMap dNames adt-}
+        {-rNames = concatMap dNames rdt-}
+        {-bNames = behaviorNames ce-}
+        {-nNames = map bindName (binds ++ impBinds)-}
+        {-names = aNames ++ rNames ++ bNames ++ nNames-}
+    {-unless (uniq names) (fail "Duplicate name found")-}
     {-fullAp (map dTCons adt ++ map dTCons rdt) binds-}
  
     bs' <- replaceOverVars stubs binds

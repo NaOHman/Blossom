@@ -3,7 +3,7 @@ import PreProcessor.PreProcessor
 import PreProcessor.Bindings
 import Types.Inference
 import LangDef.Blossom
-import Interpretor.Interpretor
+import Interpretor.Evaluator
 import Models.Program
 import qualified Data.Map as M
 import System.Environment
