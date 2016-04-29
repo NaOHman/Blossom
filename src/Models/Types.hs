@@ -9,7 +9,7 @@ module Models.Types
     , Pred(..)
     , Scheme(..)
     , Assump(..)
-    , Inst(..)
+    , Inst
     , HasKind(..)
     , Types(..)
     , Instantiate(..)
@@ -64,11 +64,11 @@ class Types t where
 instance Types Type where
     apply s (TVar u) = fromMaybe (TVar u) (lookup u s)
     apply s (TAp l r) = TAp (apply s l) (apply s r)
-    apply s t = t
+    apply _ t = t
 
     tv (TVar u) = [u]
     tv (TAp l r) = tv l `union` tv r
-    tv t = []
+    tv _ = []
 
 instance Types t => Types (Qual t) where
     apply s (ps:=>t) = apply s ps :=> apply s t
@@ -76,7 +76,7 @@ instance Types t => Types (Qual t) where
 
 instance Types Pred where
     apply s (IsIn i t) = IsIn i (apply s t)
-    tv (IsIn i t) = tv t
+    tv (IsIn _ t) = tv t
 
 instance Types a => Types [a] where
     apply s = map (apply s)
@@ -87,11 +87,8 @@ instance Types Scheme where
     tv (Forall _ qt) = tv qt
 
 instance Types Assump where
-    apply s (id:>:sc) = id :>: apply s sc
-    tv (id:>:sc) = tv sc
-
-instance HasKind a => HasKind (Lex a) where
-    kind (Lex _ a) = kind a
+    apply s (i:>:sc) = i :>: apply s sc
+    tv (_:>:sc) = tv sc
 
 instance HasKind Tyvar where
     kind (Tyvar _ k) = k
@@ -100,10 +97,12 @@ instance HasKind Tycon where
     kind (Tycon _ k) = k
 
 instance HasKind Type where
-    kind (TVar tv) = kind tv
+    kind (TVar v) = kind v
     kind (TCons tc) = kind tc
     kind (TAp t _)  = case kind t of
                            (KFun _ k) -> k
+                           _ -> error "Bad function application"
+    kind _ = error "Tried to find the kind of a Generic Type"
 
 instance Ord Tyvar where
     (Tyvar v1 k1) <= (Tyvar v2 k2) 
@@ -139,7 +138,7 @@ class Instantiate t where
 instance Instantiate Type where
     inst ts (TAp l r) = TAp (inst ts l) (inst ts r)
     inst ts (TGen n)  = ts !! n
-    inst ts t         = t
+    inst _ t         = t
 instance Instantiate a => Instantiate [a] where
     inst ts = map (inst ts)
 instance Instantiate t => Instantiate (Qual t) where
@@ -148,5 +147,6 @@ instance Instantiate Pred where
     inst ts (IsIn c t) = IsIn c (inst ts t)
 
 
+bottom :: Type -> [Type] -> (String, [Type])
 bottom (TAp t1 t2) ts = bottom t1 (t2:ts)
 bottom t ts = (show t, ts)

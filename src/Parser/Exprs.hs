@@ -17,23 +17,26 @@ import Models.Expressions
 import Parser.Literals
 import Types.Utils
 import Parser.Types
-import Control.Monad (liftM, foldM)
-import Control.Monad.State
-import Text.Megaparsec
 import Text.Megaparsec.Expr
+import Control.Monad.State
 
+expr :: BParser Expr
 expr = makeExprParser term operators <?> "expression"
 
+term :: BParser Expr
 term = choice [eAbs, eCase, eAp, eLet, eLit, terminating eVar, parens expr]
 
+terminating :: BParser a -> BParser a
 terminating p = try p <* notFollowedBy (char '.' <|> char '(')
 
+eLit :: BParser Expr
 eLit = Lit <$> literal <|> lString <|> eList expr <|> eTup expr
-    where litSugar = lString
 
+eVar :: BParser Expr
 eVar = Var <$> try aName
 
 -- lambdas with explicitly typed arguments are contained within annotations.
+eAbs :: BParser Expr
 eAbs = do
     (lam, mt) <- lambda
     return $ case mt of
@@ -41,15 +44,19 @@ eAbs = do
         Nothing -> Abs lam
 
 data ApDta = Field Id | RegAp [Expr]
+
+eAp :: BParser Expr
 eAp = try $ do 
-    head <- parens expr <|> eVar
+    h <- parens expr <|> eVar
     tails <- some apdta
-    return $ foldl makeAp head tails
+    return $ foldl makeAp h tails
     where makeAp ex (Field n) = Ap (Var $ '_':n) ex
           makeAp ex (RegAp es) = foldl Ap ex es
 
+apdta :: BParser ApDta
 apdta = (Field <$> (dot_ *> lName)) <|> (RegAp <$> csl expr)
 
+eLet :: BParser Expr
 eLet = try $ do 
            i <- lName 
            sch <- opSufCons 
@@ -58,19 +65,21 @@ eLet = try $ do
               Just s -> Let [Expl (i, quantAll s, ex)] eUnit
               _ -> Let [Impl (i, ex)] eUnit
 
+eCase :: BParser Expr
 eCase = Case <$> header <*> inlineBlock branch
     where header = case_ *> expr <* of_
           branch = do
-            pat <- pat <* arrow_
+            p <- pat <* arrow_
             ex <- exblock
-            return ([pat], ex)
+            return ([p], ex)
    
-eAnnot = Annot <$> expr <*> (quantAll <$> sufCons)
+{-eAnnot :: BParser Expr-}
+{-eAnnot = Annot <$> expr <*> (quantAll <$> sufCons)-}
 
 lambda :: BParser (Alt, Maybe (Qual Type))
-lambda = do (pat, mt) <- args
+lambda = do (p, mt) <- args
             ex <- exblock
-            return ((pat,ex), mt)
+            return ((p,ex), mt)
 
 args :: BParser ([Pat], Maybe (Qual Type))
 args = do 
@@ -81,6 +90,7 @@ args = do
     return (p, mt)
     where arg = (,) <$> lName <*> opSufCons
 
+operators :: [[Operator (StateT (Int, Int) (Parsec String)) Expr]]
 operators = [
 {-[uOp "+", uOp "-"],-}
          [bOp "*", bOp "/", bOp "//", bOp "%"],
@@ -88,30 +98,34 @@ operators = [
          [bOp "==", bOp "<=", bOp "<", bOp ">=", bOp ">"],
          [uOp "not"],
          [bOp "and", bOp "or", bOp "xor"]]
+    where uOp s = Prefix $ try $
+            rword s *> return (opAp (s++"UN"))
+          bOp s = InfixL $ try $
+              rword s *> notFollowedBy (symbol "=") *>
+                  return (\e1 e2 -> Ap (opAp s e1) e2)
+
 
 exblock ::  BParser Expr
 exblock = chain <$> inlineBlock expr
-    {-where f' d es = f d (chain es)-}
 
+chain :: [Expr] -> Expr
 chain [e] = e 
 chain (Let bg (Lit LNull):es) = Let bg (chain es)
 chain (e1:e2) = Ap (Ap (Var "!seq") e1) (chain e2)
+chain _ = error "Chain applied to an empty list"
 
-uOp s = Prefix $ try $
-    rword s *> notFollowedBy (symbol ">") *>
-       return (opAp (s++"UN"))
 
-bOp s = InfixL $ try $
-    rword s *> notFollowedBy (symbol "=") *>
-        return (\e1 e2 -> Ap (opAp s e1) e2)
-
+opAp :: Id -> Expr -> Expr
 opAp s = Ap (Var s)
 
-argArrow = csl arg <* arrow_
-    where arg = (,) <$> lName <*> opSufCons
+{-argArrow :: BParser [(Id, Maybe (Qual Type))]-}
+{-argArrow = csl arg <* arrow_-}
+    {-where arg = (,) <$> lName <*> opSufCons-}
 
-fArgs = csl expr
+{-fArgs :: BParser [Expr]-}
+{-fArgs = csl expr-}
 
+eUnit :: Expr
 eUnit = Lit LNull
 
 funcAnnot :: [Maybe (Qual Type)] -> Maybe (Qual Type) -> BParser (Maybe (Qual Type))
@@ -121,8 +135,8 @@ funcAnnot ts Nothing
         rt <- newTVar Star
         funcAnnot ts (Just $ [] :=> rt)
 funcAnnot ts (Just rt) = do
-    args <- toVars ts
-    return $ Just $ args `mkQualFn` rt
+    as <- toVars ts
+    return $ Just $ as `mkQualFn` rt
 
 newTVar :: Kind -> BParser Type
 newTVar k = do i <- getTV
@@ -131,9 +145,9 @@ newTVar k = do i <- getTV
 
 toVars :: [Maybe (Qual Type)]  -> BParser [Qual Type]
 toVars [] = return []
-toVars (Nothing:ts) = do tv <- newTVar Star
+toVars (Nothing:ts) = do t <- newTVar Star
                          tss <- toVars ts
-                         return $ ([] :=> tv) : tss
+                         return $ ([] :=> t) : tss
 toVars (Just t :ts) = do tss <- toVars ts
                          return $ t:tss
 

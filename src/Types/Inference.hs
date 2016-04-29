@@ -4,19 +4,13 @@ import Models.Types
 import LangDef.Blossom
 import Types.Utils
 import Models.Program
-import Models.Expressions
 import PreProcessor.Bindings (splitImpl)
-import Text.Megaparsec
-import Data.List (nub, union, intersect, partition, (\\))
-import Data.Maybe (fromMaybe, isJust, isNothing)
-import Control.Arrow (first)
-import Control.Monad (msum, liftM, ap, liftM2, foldM, zipWithM, when)
-import GHC.Exts
-import qualified Data.Map as M
+import Data.List (union, intersect, partition, (\\))
+import Control.Monad (liftM, ap, zipWithM)
 
 tiExpr :: Infer Expr Type
-tiExpr ce as (Var i) =  lookupSc as i
-tiExpr ce as (Lit l) = tiLit l
+tiExpr _ as (Var i) = lookupSc as i
+tiExpr _ _ (Lit l) = tiLit l
 tiExpr ce as (Abs a) = do 
     t <- newTVar Star
     qs <- tiAlt ce as t a
@@ -40,17 +34,20 @@ tiExpr ce as (Case e bs) = do
     unify err bt (te `func` rt)
     return (ps ++ qs, rt) 
 
-tiExpr ce as (Over i v _) = do
+tiExpr _ as (Over i v _) = do
     sc <- find i as
     (ps :=> t) <- freshInst sc
     unify "Overloaded variable" v t
     return (ps,t)
+tiExpr _ _ (Annot _ _) = undefined
 
+tiExprs :: Infer [Expr] [Type]
 tiExprs ce as ts = do res <- mapM (tiExpr ce as) ts
                       let ps' = concat [ps | (ps,_) <- res]
-                          ts' = [ts | (_,ts) <- res]
+                          ts' = [t | (_,t) <- res]
                       return (ps',ts')
 
+lookupSc :: [Assump] -> Id -> TI ([Pred], Type)
 lookupSc as i = do
     sc <- find i as
     (ps :=> t) <- freshInst sc
@@ -73,9 +70,10 @@ tiPat as t = uniqVars t >>= tiPat' as
           uniq' _ = True
           varNames (PAs i p) = i : varNames p
           varNames (PVar i) = [i]
-          varNames (PCons i ps) = concatMap varNames ps
+          varNames (PCons _ ps) = concatMap varNames ps
           varNames _ = []
 
+tiPat' :: [Assump] -> Pat -> TI ([Pred], [Assump], Type)
 tiPat' as (PAs i p) = do 
     (ps, as', t) <- tiPat' as p
     return (ps, (i:>:toScheme t) : as', t)
@@ -94,33 +92,25 @@ tiPat' ass (PCons i pats) = do
     rt <- newTVar Star
     (qs :=> t) <- freshInst sc
     let err = "TI Pat " ++ show (PCons i pats)
-    {-fail $ show t ++ ", " ++ show ts ++ ", " ++ show rt-}
     unify err t (foldr func rt ts)
-    {-unify err t (ts `mkFun` rt )-}
     return (ps ++ qs, as, rt)
 
 tiPats :: [Assump] -> [Pat] -> TI ([Pred], [Assump], [Type])
 tiPats ass ps = do ppat <- mapM (tiPat' ass) ps
-                   let ps = concat [ps' | (ps',_,_) <- ppat]
+                   let ps' = concat [p | (p,_,_) <- ppat]
                        as = concat [as' | (_,as',_) <- ppat]
                        ts = [t | (_,_,t) <- ppat]
-                   return (ps, as, ts)
+                   return (ps', as, ts)
 
-{-tiAlt :: Infer TAlt Type-}
+tiAlt :: ClassEnv -> [Assump] -> Type -> ([Pat],Expr) -> TI [Pred]
 tiAlt ce as t (p, e) = do (ps, as', tp) <- tiPats as p
                           (qs, te) <- tiExpr ce (as' ++ as) e
                           let err = "TIAlt :" ++ show p ++" :: " ++ show tp ++ ", " ++ show e ++ " :: " ++ show te
                           unify err t (tp `mkFun` te)
                           return (ps ++ qs)
-                           {-if null tp then -}
-                               {-return (ps ++ qs, te)-}
-                             {-else-}
-                               {-return (ps ++ qs, tp `mkFun` te)-}
 
+tiAlts :: ClassEnv -> [Assump] -> [([Pat],Expr)] -> Type -> TI [Pred]
 tiAlts ce as alts t = concat <$> mapM (tiAlt ce as t) alts
-                         {-let err = "TIAlts " ++ show alts-}
-                         {-mapM_ (unify err t . snd) psts-}
-                         {-return (concatMap fst psts)-}
 
 split :: Monad m => ClassEnv -> [Tyvar] -> [Tyvar] -> [Pred] -> m ([Pred], [Pred])
 split ce fs gs ps = do 
@@ -130,13 +120,13 @@ split ce fs gs ps = do
     return (ds, rs \\ rs')
 
 defaultedPreds :: Monad m => ClassEnv -> [Tyvar] -> [Pred] -> m [Pred]
-defaultedPreds  = withDefaults (\vps ts -> concatMap snd vps)
+defaultedPreds  = withDefaults (\vps _ -> concatMap snd vps)
 
 ambiguities :: [Tyvar] -> [Pred] -> [Ambiguity]
 ambiguities vs ps = [(v, filter(elem v . tv) ps) | v <- tv ps \\ vs ]
 
 tiExpl :: ClassEnv -> [Assump] -> TExpl -> TI [Pred]
-tiExpl ce as (i, sc, alt) = do 
+tiExpl ce as (_, sc, alt) = do 
     (qs :=> t) <- freshInst sc
     ps         <- tiAlt ce as t alt
     s          <- getSubst
@@ -156,7 +146,7 @@ tiExpl ce as (i, sc, alt) = do
 
 restricted :: [TImpl] -> Bool
 restricted = any simple 
-    where simple (i,([],e)) = True
+    where simple (_,([],_)) = True
           simple _ = False
 
 
@@ -185,34 +175,34 @@ tiImpls ce as bs = do
 
 tiBindGroup :: Infer BG [Assump]
 tiBindGroup ce as (es,iss) = do 
-    let as' = [ v:>:sc | (v,sc,alts) <- es ]
+    let as' = [ v:>:sc | (v,sc,_) <- es ]
     (ps, as'') <- tiSeq tiImpls ce (as'++as) iss
     qss        <- mapM (tiExpl ce (as''++as'++as)) es
     return (ps++concat qss, as''++as')
 
 tiSeq :: Infer bg [Assump] -> Infer [bg] [Assump]
-tiSeq ti ce as []       = return ([],[])
 tiSeq ti ce as (bs:bss) = do 
     (ps,as')  <- ti ce as bs
     (qs,as'') <- tiSeq ti ce (as'++as) bss
     return (ps++qs, as''++as')
+tiSeq _ _ _ _ = return ([],[])
 
+tryPat :: [Assump] -> Pat -> ([Assump], Type)
 tryPat as p = runTI $ do
-    (_,as,t) <- tiPat as p
+    (_,as',t) <- tiPat as p
     s <- getSubst
-    return (apply s as, apply s t)
+    return (apply s as', apply s t)
 
+tryPats :: [Assump] -> [Pat] -> ([Assump], [Type])
 tryPats as ps = runTI $ do
-    (_,as,t) <- tiPats as ps
+    (_,as',t) <- tiPats as ps
     s <- getSubst
-    return (apply s as, apply s t)
+    return (apply s as', apply s t)
    
-
 tiProgram :: ClassEnv -> [Assump] -> [BG] -> ([Assump],Subst)
 tiProgram ce as bgs = runTI $ do
     (ps, as') <- tiSeq tiBindGroup ce as bgs
     s         <- getSubst
-    {-return (apply s as')-}
     rs        <- reduce ce (apply s ps)
     s'        <- defaultSubst ce [] rs
     let sub = s'@@ s
@@ -258,7 +248,8 @@ withDefaults f ce vs ps
 type Ambiguity = (Tyvar,[Pred])
 
 candidates :: ClassEnv -> Ambiguity -> [Type]
-candidates ce (v , qs) = []
+candidates _ _ = []
+{-candidates ce (v , qs) = []-}
 
 getSubst :: TI Subst
 getSubst = TI (\s n -> (s,n,s))
@@ -281,4 +272,4 @@ type Infer e t = ClassEnv -> [Assump] -> e -> TI ([Pred], t)
 
 
 runTI :: TI a -> a
-runTI (TI f) = x where (s,n,x) = f nullSubst 0
+runTI (TI f) = x where (_,_,x) = f nullSubst 0

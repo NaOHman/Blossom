@@ -1,28 +1,50 @@
 module LangDef.Blossom  where
 
 import Models.Types
-import Types.Utils
-import Models.Expressions
+import Models.Program
 import qualified Data.Map as M
 
-nTup n =  "(" ++ replicate (n - 1) ',' ++ ")"
+patNil :: Pat
 patNil =  PCons "[nil]" []
+
+patCons :: [Pat] -> Pat
 patCons = PCons "[cons]"
 
 ----------- Types --------------------
+tChar :: Type
 tChar = tcons "Char" Star
+
+tArrow :: Type
+tArrow = TCons $ Tycon "->" (KFun Star (KFun Star Star))
+
+tInt :: Type
 tInt = tcons "Int" Star
+
+tFloat :: Type
 tFloat = tcons "Float" Star
+
+tBool :: Type
 tBool = tcons "Bool" Star
+
+tNull :: Type
 tNull = tcons "Null" Star
+
+tUnit :: Type
 tUnit = tcons "()" Star
 
+tList :: Type -> Type
 tList = TAp (tcons "List" (KFun Star Star))
+
+tString :: Type
 tString = tList tChar
 
+tplName :: Int -> String 
 tplName n = "(" ++ replicate (n-1) ',' ++ ")"
+
+tcons :: Id -> Kind -> Type
 tcons n k = TCons $ Tycon n k
 
+tTuple :: [Type] -> Type
 tTuple ts = 
     let len = length ts
         name = tplName len 
@@ -30,10 +52,12 @@ tTuple ts =
         tc = tcons name ks
     in foldl TAp tc ts
 
+kAry :: Int -> Kind
 kAry 0 = Star
 kAry n = KFun Star (kAry (n-1))
 
 --------- Behaviors -----------------
+classes :: ClassEnv
 classes = M.fromList $ map mkCls 
     [("Eq", [], [tInt, tChar, tFloat, tBool])
     ,("Showable", [], [tInt, tChar, tFloat, tBool, tString])
@@ -42,12 +66,15 @@ classes = M.fromList $ map mkCls
     ,("Real", ["Num","Ord"], [tInt, tFloat])
     ,("Fractional", ["Num"], [tFloat])
     ,("Floating", ["Fractional"], [tFloat])]
-mkCls (id,ss,is) = (id,(ss, insts, stubs))
-    where insts = map (\t -> [] :=> IsIn id [t]) is
+
+mkCls :: (Id, [Id], [Type]) -> (Id, ([Id], [Qual Pred], [Stub]))
+mkCls (i,ss,is) = (i, (ss, ints, stubs))
+    where ints = map (\t -> [] :=> IsIn i [t]) is
           stubs = []
 
 -------- Assumptions -----------------
---
+
+blossomAssumps :: [Assump]
 blossomAssumps = [
    "+UN"    :>: unary "Num"
   ,"-UN"    :>: unary "Num"
@@ -72,7 +99,7 @@ blossomAssumps = [
   ,"[cons]" :>: sc1 ([] :=> mkFun [g0, tList g0] (tList g0))
   ] ++ tupleAssumps
   where binary q = sc1 ([IsIn q [g0]] :=> mkFun [g0,g0] g0)
-        relational q = sc1 $ [] :=> mkFun [g0,g0] tBool
+        relational q = sc1 $ [IsIn q [g0]] :=> mkFun [g0,g0] tBool
         unary q = sc1 $ [IsIn q [g0]] :=> func g0 g0
         bbool = Forall [] ([]:=> mkFun [tBool,tBool] tBool)
         ubool = Forall [] ([] :=> func tBool tBool)
@@ -80,9 +107,16 @@ blossomAssumps = [
         g1 = TGen 1
         sc1 = Forall [Star]
 
+tupleAssumps :: [Assump]
 tupleAssumps = map tplAsmp [2..20]
     where tplAsmp n = 
             let ks = replicate n Star
                 ts = map TGen [0..n]
                 name = tplName n
             in (name :>: Forall ks ([] :=> tTuple ts))
+
+func :: Type -> Type -> Type
+a `func` b = TAp (TAp tArrow a) b
+
+mkFun :: [Type] -> Type -> Type
+mkFun ts t = foldr func t ts

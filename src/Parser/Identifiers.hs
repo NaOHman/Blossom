@@ -23,51 +23,109 @@ module Parser.Identifiers
 import Control.Monad (void)
 import Parser.Lexeme
 import Text.Megaparsec
-import Text.Megaparsec.String
 
+myReserves :: [String]
 myReserves = ["if", "then", "else", "elif", "is", "curry"
              , "send", "request", "handler", "fun", "when" 
              , "where", "because", "Given", "and", "or", "not"
              , "True", "False", "case", "of", "inherits"]
 
+is_ :: BParser ()
 is_ = rword "is"
+
+because_ :: BParser ()
 because_ = rword "because"
+
+inherits_ :: BParser ()
 inherits_ = rword "inherits"
+
+given_ :: BParser ()
 given_ = rword "Given"
+
+if_ :: BParser ()
 if_ = rword "if"
+
+elif_ :: BParser ()
 elif_ = rword "elif"
+
+then_ :: BParser ()
 then_ = rword "then"
+
+else_ :: BParser ()
 else_ = rword "else"
+
+when_ :: BParser ()
 when_ = rword "when"
+
+where_ :: BParser ()
 where_ = rword "where"
+
+data_ :: BParser ()
 data_ = rword "data"
+
+case_ :: BParser ()
 case_ = rword "case"
+
+type_ :: BParser ()
 type_ = rword ".type"
+
+of_ :: BParser ()
 of_ = rword "of"
+
+true_ :: BParser ()
 true_ = rword "True"
+
+false_ :: BParser ()
 false_ = rword "False"
-arrow_ = symbol "->"
-equals_ = symbol "="
-comma_ = symbol ","
+
+arrow_ :: BParser ()
+arrow_ = void $ symbol "->"
+
+equals_ :: BParser ()
+equals_ = void $ symbol "="
+
+comma_ :: BParser ()
+comma_ = void $ symbol ","
+
+dot_ :: BParser ()
 dot_ = void $ symbol "."
-colon_ = symbol ":"
+
+colon_ :: BParser ()
+colon_ = void $ symbol ":"
+
+fun_ :: BParser ()
 fun_ = rword "fun" 
+
+curry_ :: BParser ()
 curry_ = rword "curry" 
+
+send_ :: BParser ()
 send_ = rword "send" 
+
+request_ :: BParser ()
 request_ = rword "request" 
 
+lName :: BParser String
 lName = identifier lowerChar
+
+uName :: BParser String
 uName = identifier upperChar
+
+aName :: BParser String
 aName = identifier letterChar
 
+rword :: String -> BParser ()
 rword w = lexeme $ try $ string w *> notFollowedBy nameChars
 
+identifier ::BParser Char ->  BParser String
 identifier = lexeme . rstring
 
+rstring :: BParser Char -> BParser String
 rstring fcp = lexeme (p >>= rwcheck)
     where p = (:) <$> fcp <*> many nameChars
           rwcheck x = if x `elem` myReserves
                       then fail $ x ++ " is a reserved word"
                       else return x
 
+nameChars :: BParser Char
 nameChars = alphaNumChar <|> char '_'

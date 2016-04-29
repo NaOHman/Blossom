@@ -4,22 +4,18 @@ module Models.Expressions
     , module Models.Types
     , Expr (..) , Literal (..)
     , Pat (..)
-    , Alt(..)
-    , Stub(..)
-    , Expl(..)
-    , Impl(..)
-    , Class(..)
-    , BindGroup(..)
+    , Alt
+    , Stub
+    , Expl
+    , Impl
+    , Class
+    , BindGroup
     , Binding(..)
     , Nameable(..)
-    {-, Prod(..)-}
     ) where
 
 import Models.Core
 import Models.Types
-import Parser.Core
-import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 import Data.List (intercalate)
 import Control.Arrow (second)
     
@@ -59,8 +55,8 @@ instance Types Expr where
     tv (Let bg e) = tv bg ++ tv e
     tv (Ap e1 e2) = tv e1 ++ tv e2
     tv (Case e as) = tv e ++ concatMap (tv . snd) as
-    tv (Annot e as) = tv e 
-    tv (Over i (TVar t) _) = [t] 
+    tv (Annot e _) = tv e 
+    tv (Over _ (TVar t) _) = [t] 
     tv _ = []
 
     apply s (Abs (p,e)) = Abs (p, apply s e)
@@ -69,7 +65,7 @@ instance Types Expr where
     apply s (Case e as) = Case (apply s e) $ map (second (apply s)) as
     apply s (Annot e sc) = Annot (apply s e) sc
     apply s (Over i t e) = Over i (apply s t) e
-    apply s e = e
+    apply _ e = e
 
 
 instance Show Expr where
@@ -82,12 +78,12 @@ instance Show Expr where
     show (Let bg ex) = show "Let " ++ show bg ++ " in " ++ show ex
     show (Over i t os)   = show "Overload " ++ i ++ " :" ++ show t ++ ":" ++ concatMap (\(qt,e) -> "\n  " ++ show qt ++  " => " ++ show e) os
 
-showBG (es, is) = indented es ++  indented is
+
+showAlt :: Alt -> String
 showAlt (p,ex) = "(" ++ show p ++ ")" ++ " -> " ++ show ex
 
+indentedAlt :: [Alt] -> String
 indentedAlt = concatMap (\a -> "\n   " ++ showAlt a)
-indented :: Show a => [a] -> String
-indented = concatMap (\a -> "\n   " ++ show a)
 
 data Literal = LChar Char
              | LInt    Integer
@@ -114,6 +110,7 @@ instance Show Pat where
     show (PVar v) = "[" ++ v ++ "]"
     show (PCons v ps) = "[" ++ v ++ " " ++ subPats ++ "]"
         where subPats = intercalate ", " $ map show ps
+    show (PAs v p) = "[" ++ v ++ "#" ++ show p ++ "]"
 
 class Prod a where
     prod :: [a] -> a
@@ -121,9 +118,6 @@ class Prod a where
 instance Prod a => Prod (Qual a) where 
     prod qs = let (ps,as) = unzip [(p,a) | p :=> a <- qs]
               in concat ps :=> prod as
-
-instance Nameable a => Nameable (Lex a) where
-    nameOf = nameOf . unwrap
 
 instance Prod Pat where 
     prod [as] = as
@@ -138,6 +132,5 @@ instance Prod Type where
     prod ts = foldl TAp (TCons $ Tycon (prodName ts) ks) ts
         where ks =  foldr KFun Star (replicate (length ts) Star)
 
-{-lProd as = LCons (prodName as) as-}
 prodName :: [a] -> String
 prodName ls = show (length ls) ++ "PROD"

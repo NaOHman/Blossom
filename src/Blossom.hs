@@ -1,65 +1,82 @@
-{-# LANGUAGE GADTs, TupleSections #-}
-
 import Parser.Parser
 import PreProcessor.PreProcessor
+import PreProcessor.Bindings
 import Types.Inference
 import LangDef.Blossom
 import Interpretor.Interpretor
-import Types.Utils
 import Models.Program
 import qualified Data.Map as M
-import Control.Monad
-import Control.Monad.Trans
-import GHC.Exts
-import Text.Megaparsec
 import System.Environment
-import Control.Monad.State
+import System.Exit
+import Data.List (isPrefixOf)
+import Control.Monad
 
+data Dbg = Dbg
+    { dbgParser :: Bool
+    , dbgPreProc :: Bool
+    , dbgTypeCheck :: Bool
+    , dbgInterpret :: Bool
+    }
+
+def :: Dbg
+def = Dbg False False False False
+
+main :: IO ()
 main = do 
-    (dbg, file, mainArgs) <- parseArgs <$> getArgs
-    runBlossom file dbg
+    args <- getArgs
+    case parseArgs args of
+        (Just (dbg, file, progArgs)) -> runBlossom file progArgs dbg
+        _ -> usage
 
-runBlossom file dbg = do 
+runBlossom :: String -> [String] -> Dbg -> IO ()
+runBlossom file args dbg = do 
     parsed <- parseBlossomFile file
     case parsed of
-        Left err -> print err
-        Right tops -> do
-           {-mapM_ print tops-}
-           let (ce', as, bg, bs) = validate tops
-               ce = ce' `M.union` classes
-           {-mapM_ (\bg -> print bg >> print "-------------") bg-}
-           {-putStrLn "Assumptions:"-}
-           {-mapM_ print as-}
-           {-putStrLn "::::::::::::::"-}
-           {-mapM_ print (flatten bg)-}
-           let bgs = map fixBG bg
-               (as',s) = tiProgram ce (as ++ blossomAssumps) bgs
-               {-binds = map scrubBinds bs ++ map scrubEx es ++ is-}
-           mapM_ print as'
-           let myBinds = map scrubBinds $ bs ++ apply s (flatten bg)
-           {-mapM_ print myBinds-}
-           interpretBlossom myBinds dbg
-           {-mapM_ print as'-}
-           {-mapM_ print (apply s (flatten bg))-}
+        Left err -> do
+            print err
+            exitFailure  
+        Right prg -> do
+            when (dbgParser dbg) (debugParser prg)
+            let (ce', as', bg, bs) = validate prg
+                ce = ce' `M.union` classes -- TODO Push into PreProcessor logic
+                as = as' ++ blossomAssumps
+            when (dbgPreProc dbg) (debugPreProc ce as bg bs)
+            let bgs = map fixBG bg
+                (assumps,s) = tiProgram ce as bgs
+            when (dbgTypeCheck dbg) (debugTypeCheck assumps)
+            let myBinds = map scrubBinds $ bs ++ apply s (flatten bg)
+            interpretBlossom myBinds args (dbgInterpret dbg)
 
-           {-print bs-}
-           {-mapM_ print (as ++ defaultAssumps)-}
-           {-let as' = tiProgram ce (as ++ defaultAssumps) bs-}
-           {-print as-}
-           {-putStrLn "Success"-}
-           {-case preprocess s of-}
-               {-Left err -> print err-}
-               {-Right (ws,scp) -> do-}
-                    {-mapM_ print ws-}
-                    {-runProg dbg scp-}
+debugParser :: Program -> IO()
+debugParser = undefined
 
-scrubBinds (Expl (i,_,e)) = (i,e)
-scrubBinds (Impl (i,e)) = (i,e)
-scrubEx (i,_,e) = (i,e)
+debugPreProc :: ClassEnv -> [Assump] -> [BindGroup] -> [Binding] -> IO()
+debugPreProc = undefined
 
-flatten :: [BindGroup] -> [Binding]
-flatten = concatMap flatten' 
-    where flatten' (es, is) =  map Expl es ++ map Impl (concat is)
+debugTypeCheck :: [Assump] -> IO()
+debugTypeCheck = undefined
 
-parseArgs ("-d":f:as) = (True, f, as)
-parseArgs (f:as) = (False, f, as)
+parseArgs :: Monad m => [String] -> m (Dbg, String, [String])
+parseArgs [f] = return (def, f, [])
+parseArgs [f,s] = case parseDbg f of 
+    (Just dbg) -> return (dbg, s,[])
+    _ -> return (def, f, [s])
+parseArgs (f:s:as) = case parseDbg f of 
+    (Just dbg) -> return (dbg, s, as)
+    _ -> return (def, f, s:as)
+parseArgs _ = fail "Could not parse a file"
+
+parseDbg :: String -> Maybe Dbg
+parseDbg s | "+DBG" `isPrefixOf` s = Just 
+                    (Dbg ('p' `elem` s) ('o' `elem` s) ('t' `elem` s) ('i' `elem` s))
+           | otherwise = Nothing
+
+usage :: IO ()
+usage = do
+    putStrLn "./blossom [+DBG[flags]] filename [prog args]"
+    putStrLn "Debug flags:"
+    putStrLn "    p: Parser output"
+    putStrLn "    o: PreProcessor output"
+    putStrLn "    t: Type checker output"
+    putStrLn "    i: Interpretor output"
+    exitSuccess

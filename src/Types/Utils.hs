@@ -1,22 +1,27 @@
 module Types.Utils where
 
 import Models.Types
+import LangDef.Blossom
 import Models.Program
-import Models.Expressions
-import Text.Megaparsec
-import Data.List (nub, union, intersect)
-import Data.Maybe (fromMaybe, isJust)
-import Control.Monad (msum, liftM, ap, liftM2)
+import Data.List (intersect)
+import Data.Maybe (isJust)
+import Control.Monad (msum, liftM2)
 import qualified Data.Map as M
 
 super :: ClassEnv -> Id -> [Id]
-super ce i = case M.lookup i ce of Just (is,_,_) -> is
+super ce i = case M.lookup i ce of 
+    Just (is,_,_) -> is
+    _ -> error "Super class not in class env"
 
 insts :: ClassEnv -> Id -> [Inst]
-insts ce i = case M.lookup i ce of Just (_,ins,_) -> ins
+insts ce i = case M.lookup i ce of 
+    Just (_,ins,_) -> ins
+    _ -> error "Instance not in class env"
 
+defined :: Maybe a -> Bool
 defined = isJust
 
+enumId :: Int -> String
 enumId n = "..v" ++ show n
 
 nullSubst :: Subst
@@ -42,7 +47,7 @@ mgu a (TAp l r) (TAp l' r') = do
     return (s2 @@ s1)
 mgu a (TVar u) t = varBind a u t
 mgu a t (TVar u) = varBind a u t
-mgu a (TCons t1) (TCons t2) 
+mgu _ (TCons t1) (TCons t2) 
     | t1 == t2 = return nullSubst
 mgu e a b = fail $  "Types could not be unified " ++ show a ++ ", "++ show b ++ " In expresssion: " ++ show e
 
@@ -73,15 +78,14 @@ liftPred m (IsIn i ts) (IsIn i' ts')
           foldFail []     []     = return []
           foldFail _      _      = fail "Classes have different numbers of parameters"
 
+subUnion :: [Subst] -> Subst
 subUnion = foldl (@@) nullSubst
-
-
 
 bySuper :: ClassEnv -> Pred -> [Pred]
 bySuper ce p@(IsIn i t) = p : concat [bySuper ce (IsIn i' t) | i' <- super ce i]
 
 byInst :: ClassEnv -> Pred -> Maybe [Pred]
-byInst ce p@(IsIn i t) = msum [tryInst it | it <- insts ce i]
+byInst ce p@(IsIn i _) = msum [tryInst it | it <- insts ce i]
     where tryInst (ps :=> h) = do u <- matchPred h p
                                   Just (map (apply u) ps)
 
@@ -114,6 +118,7 @@ isInHnf (IsIn _ ts) = all hnf ts
     where hnf (TVar _) = True
           hnf (TCons _) = False
           hnf (TAp t _) = hnf t
+          hnf _ = error "Generic Types have no HNF"
 
 toHnfs :: Monad m => ClassEnv -> [Pred] -> m [Pred]
 toHnfs ce ps = do pss <- mapM (toHnf ce) ps
@@ -128,6 +133,7 @@ toHnf ce p | isInHnf p = return [p]
 quantQual :: [Pred] -> Type -> Scheme
 quantQual ps t = quantify (tv t) (ps :=> t)
 
+quantAll :: Qual Type -> Scheme
 quantAll t = quantify (tv t) t
 
 quantify :: [Tyvar] -> Qual Type -> Scheme
@@ -140,24 +146,30 @@ toScheme :: Type -> Scheme
 toScheme t = Forall [] ([] :=> t)
 
 find :: Monad m => Id -> [Assump] -> m Scheme
-find i [] = fail $ "Unbound variable " ++ show i
 find i ((i':>:sc) : as) | i == i' = return sc
                         | otherwise = find i as
-
-{-kGen :: Id -> Int -> Type-}
-{-kGen id k = foldl tAp' (TCons $ Tycon id (kAry k)) [0..k]-}
-    {-where tAp' t i = TAp t (TGen i)-}
-
+find i _ = fail $ "Unbound variable " ++ show i
 
 assume :: [Tyvar] -> Id -> Type -> Assump
-assume tv id t = id :>: quantify tv ([] :=> t)
+assume tv' i t = i :>: quantify tv' ([] :=> t)
 
+mkQualFn :: [Qual Type] -> Qual Type -> Qual Type
 mkQualFn qts qt = foldr qualFn qt qts
+
+qualFn :: Qual Type -> Qual Type -> Qual Type
 qualFn (q1 :=> t1) (q2 :=> t2) = (q1 ++ q2) :=> (t1 `func` t2)
 
+mkCons :: Id -> Kind -> Type
 mkCons n k = TCons $ Tycon n k
+
+mkVar :: Id -> Kind -> Type
 mkVar n k = TVar $ Tyvar n k
 
+class Data d where
+    dQual ::  d -> [Pred]
+    dTCons :: d -> Tycon
+    dCstrs :: d -> [(Id, Scheme)]
+    dNames :: d -> [Id]
 
 instance Data Adt where
     dQual = aqual
@@ -169,8 +181,10 @@ instance Data Adt where
          where toCstr (n,[]) = (n, quantQual q t)
                toCstr (n,ts) = (n, quantQual q $ ts `mkFun` t)
 
+getCons :: Type -> Tycon
 getCons (TCons t) = t
 getCons (TAp t _) = getCons t
+getCons _ = error "getCons applied to something without a constructor"
 
 instance Data Rec where
     dQual = rqual
@@ -183,8 +197,3 @@ instance Data Rec where
             ft = if null ts then t else ts `mkFun` t
                 
         in [(n, quantQual q ft)]
-
-
-tArrow = TCons $ Tycon "->" (KFun Star (KFun Star Star))
-a `func` b = TAp (TAp tArrow a) b
-mkFun ts t = foldr func t ts
