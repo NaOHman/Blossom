@@ -16,7 +16,7 @@ import qualified Data.Map.Strict as M
 
 
 data Program = Program
-    { pBind :: [Binding]
+    { pBind :: [Bind]
     , pImpl :: [Implementation]
     , pAdt :: [Adt]
     , pRdt :: [Rec]
@@ -40,7 +40,7 @@ data Rec = Rec
 data Behavior = Bhvr [Pred] Type Id [(Id, Type)]
     deriving Show
 
-data Implementation = Im [Pred] Type Id [Impl]
+data Implementation = Im [Pred] Type Id [Bind]
     deriving Show
 
 type ClassEnv = M.Map Id Class

@@ -3,13 +3,10 @@ module Language.Expressions
     , module Language.Types
     , Expr (..) , Literal (..)
     , Pat (..)
-    , Alt
     , Stub
-    , Expl
-    , Impl
     , Class
     , BindGroup
-    , Binding(..)
+    , Bind(..)
     ) where
 
 import Language.Core
@@ -17,49 +14,40 @@ import Language.Types
 import Data.List (intercalate)
 import Control.Arrow (second)
     
-type Expl = (Id, Scheme, Alt)
-type Impl = (Id, Alt)
-
-type Alt = ([Pat], Expr)
-type BindGroup = ([Expl], [[Impl]])
+type BindGroup = ([Bind], [[Bind]])
 type Stub = (Id, Scheme, [(Scheme, Expr)])
 type Class = ([Id], [Inst], [Stub])
 
-data Binding = Expl Expl
-             | Impl Impl
+data Bind = Bind Id Expr
     deriving Show
 
 data Expr = Lit Literal
           | Var  Id
-          | Abs  Alt
+          | Abs  [Pat] Expr
           | Ap   Expr Expr
-          | Let  [Binding] Expr
-          | Case Expr [Alt]
-          | Annot Expr Scheme
+          | Let  [Bind] Expr
+          | Case Expr [(Pat, Expr)]
+          | Annot Scheme Expr
           | Over Id Type [(Scheme, Expr)]
 
-instance Types Binding where
-    tv (Expl (_,_,(_,e))) = tv e
-    tv (Impl (_,(_,e))) = tv e
-
-    apply s (Expl (i,sc,(p,e))) = Expl (i,sc, (p, apply s e))
-    apply s (Impl (i,(p,e))) = Impl (i, (p, apply s e))
-
+instance Types Bind where
+    tv (Bind _ e) = tv e
+    apply s (Bind i e) = Bind i (apply s e)
 
 instance Types Expr where
-    tv (Abs (_,e)) = tv e
+    tv (Abs _ e) = tv e
     tv (Let bg e) = tv bg ++ tv e
     tv (Ap e1 e2) = tv e1 ++ tv e2
     tv (Case e as) = tv e ++ concatMap (tv . snd) as
-    tv (Annot e _) = tv e 
+    tv (Annot _ e) = tv e 
     tv (Over _ (TVar t) _) = [t] 
     tv _ = []
 
-    apply s (Abs (p,e)) = Abs (p, apply s e)
+    apply s (Abs ps e) = Abs ps (apply s e)
     apply s (Let bg e) = Let (apply s bg) (apply s e)
     apply s (Ap e1 e2) = Ap (apply s e1) (apply s e2)
     apply s (Case e as) = Case (apply s e) $ map (second (apply s)) as
-    apply s (Annot e sc) = Annot (apply s e) sc
+    apply s (Annot sc e) = Annot sc (apply s e)
     apply s (Over i t e) = Over i (apply s t) e
     apply _ e = e
 
@@ -67,19 +55,12 @@ instance Types Expr where
 instance Show Expr where
     show (Lit l) = show l
     show (Var v) = "{" ++ v ++ "}"
-    show (Abs a) = showAlt a
+    show (Abs ps ex) = show ps ++ " -> " ++ show ex
     show (Ap e1 e2) = "(AP" ++ show e1 ++  " " ++ show e2 ++ ")"
-    show (Case e as) =  "Case " ++ show e ++ " of" ++ indentedAlt as
-    show (Annot e s) = show e ++ " : " ++ show s
+    show (Case e as) =  "Case " ++ show e ++ " of" ++ concatMap show as
+    show (Annot s e) = show e ++ " : " ++ show s
     show (Let bg ex) = show "Let " ++ show bg ++ " in " ++ show ex
     show (Over i t os)   = show "Overload " ++ i ++ " :" ++ show t ++ ":" ++ concatMap (\(qt,e) -> "\n  " ++ show qt ++  " => " ++ show e) os
-
-
-showAlt :: Alt -> String
-showAlt (p,ex) = "(" ++ show p ++ ")" ++ " -> " ++ show ex
-
-indentedAlt :: [Alt] -> String
-indentedAlt = concatMap (\a -> "\n   " ++ showAlt a)
 
 data Literal = LChar Char
              | LInt    Integer

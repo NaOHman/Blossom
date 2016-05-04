@@ -1,4 +1,5 @@
 {-# LANGUAGE TupleSections #-}
+
 module PreProcessor.PreProcessor where
 
 import Language.Types
@@ -14,10 +15,10 @@ import GHC.Exts (groupWith)
 
 type PP a = State Int a
 
-validate :: Program -> (ClassEnv, [Assump], [BindGroup], [Binding])
+validate :: Program -> (ClassEnv, [Assump], [BindGroup], [Bind])
 validate prg = evalState (preprocess prg) 0
                           
-preprocess :: Program -> PP (ClassEnv, [Assump], [BindGroup], [Binding])
+preprocess :: Program -> PP (ClassEnv, [Assump], [BindGroup], [Bind])
 preprocess (Program bnds imps adt rdt bvs) = do
     (fbs', recCE) <- processRecs rdt
     (fbs, fieldCE) <- overload fbs'
@@ -31,13 +32,12 @@ preprocess (Program bnds imps adt rdt bvs) = do
         stubs = ceStubs ce
         fassumps = bindingAssumps (fbs ++ overBinds bhCE)
         stubAssumps = map (\(i,s,_) -> i :>: s) stubs
-        stubBins = map (\(i,s,ps) -> Expl (i,s, expr2Alt $ Over i (TVar $ Tyvar "" Star) ps)) stubs
+        stubBins = map (\(i,s,ps) -> Bind i $ Annot s (Over i (TVar $ Tyvar "" Star) ps)) stubs
         assumps = makeCstrAssumps constructors ++ fassumps ++ stubAssumps
 
-        impl' = map Impl impl
         consBinds = constrBinds constructors
         impBinds = fbs ++ consBinds ++ stubBins
-        binds = impl' ++ expl'  ++ overBinds ce
+        binds = impl ++ expl'  ++ overBinds ce
 
         {-aNames = concatMap dNames adt-}
         {-rNames = concatMap dNames rdt-}
@@ -50,20 +50,15 @@ preprocess (Program bnds imps adt rdt bvs) = do
     bs' <- replaceOverVars stubs binds
     return (ce, assumps, toBindGroup bs', impBinds)
 
-replaceOverVars :: [Stub] -> [Binding] -> PP [Binding]
+replaceOverVars :: [Stub] -> [Bind] -> PP [Bind]
 replaceOverVars sts = mapM (repOV sts) 
-    where repOV ss (Expl (i,s,(ps,e))) = do
-                e' <- rVars ss e
-                return $ Expl (i,s,(ps,e'))
-          repOV ss (Impl (i,(ps,e))) = do
-                e' <- rVars ss e
-                return $ Impl (i,(ps,e'))
+    where repOV ss (Bind i e) = Bind i <$> rVars ss e
 
 rVars :: [Stub] -> Expr -> PP Expr
 rVars ss (Ap e1 e2) = Ap <$> rVars ss e1 <*> rVars ss e2
-rVars ss (Annot e s) = Annot <$> rVars ss e <*> return s
+rVars ss (Annot s e) = Annot s <$> rVars ss e
 rVars ss (Let bs e) = Let <$> replaceOverVars ss bs <*> rVars ss e
-rVars ss (Abs (p,e) ) = Abs . (p,) <$> rVars ss e
+rVars ss (Abs p e) = Abs p <$> rVars ss e
 rVars ss (Var v) = case find (\(i,_,_) -> i == v) ss of
     Nothing -> return (Var v)
     Just (i,_,ps) -> do t <- newTVar Star
@@ -73,20 +68,20 @@ rVars ss (Case e1 bs) = Case <$> rVars ss e1 <*> mapM bVars bs
                            return (p, e')
 rVars _ e = return e
 
-bindingAssumps :: [Binding] -> [Assump]
-bindingAssumps = map (\(Expl (i,s,_)) -> i :>: s) 
+bindingAssumps :: [Bind] -> [Assump]
+bindingAssumps = map (\(Bind i (Annot s _)) -> i :>: s) 
 
-constrBinds :: [(Id, Scheme)] -> [Binding]
+constrBinds :: [(Id, Scheme)] -> [Bind]
 constrBinds = map toBind 
-    where toBind (n, s) = Expl (n, s, ([], Var n))
+    where toBind (n, s) = Bind n (Annot s (Var n))
 
 makeCstrAssumps :: [(Id, Scheme)] -> [Assump]
 makeCstrAssumps = map (uncurry (:>:))
 
-overBinds :: ClassEnv -> [Binding]
+overBinds :: ClassEnv -> [Bind]
 overBinds = M.foldMapWithKey f
     where f _ (_,_,os) = concatMap unpack os
-          unpack (i,_,ps) = map (\(sc,e) -> Expl (implName i sc, sc, expr2Alt $ e)) ps
+          unpack (i,_,ps) = map (\(sc,e) -> Bind (implName i sc) (Annot sc e)) ps
 
 implName :: Id -> Scheme -> Id
 implName i sc = "$" ++ i ++  "#" ++ show sc
@@ -123,17 +118,17 @@ addImp ce (Im q t i ss) = do
              Just cls -> return cls
              Nothing -> fail $ "Behavior " ++ i ++ "Not Found"
    let ist = q :=> IsIn i [spine t] 
-       bns = map fst ss
+       bns = map bindName ss
        sns = map (\(i',_,_) -> i') stbs
    unless (sort bns == sort sns) 
           (fail $ "Must implement stubs defined by " ++ i)
    let stbs' = foldl (addStub i (q :=> (TCons $  getCons t))) stbs ss
    return (M.insert i (sc,ist:is, stbs') ce)
 
-addStub :: Id -> Qual Type -> [Stub] -> Impl -> [Stub] 
-addStub cls qt stbs (sn, alt) = map add' stbs
+addStub :: Id -> Qual Type -> [Stub] -> Bind -> [Stub] 
+addStub cls qt stbs (Bind sn ex) = map add' stbs
     where add' (n, sc, bs)
-              | n == sn = (n, sc, (pInst cls qt sc, Abs alt) : bs)
+              | n == sn = (n, sc, (pInst cls qt sc, ex) : bs)
               | otherwise = (n, sc, bs)
 
 stubNames :: ClassEnv -> [Id]
@@ -158,7 +153,7 @@ spine :: Type -> Type
 spine (TAp t _) = spine t
 spine t = t
 
-processRecs :: [Rec] -> PP ([Expl], ClassEnv)
+processRecs :: [Rec] -> PP ([Bind], ClassEnv)
 processRecs rs = do
     --break into inherited/noninherited datatypes
     (inhPairs, regs) <-  filterInherits rs
@@ -171,7 +166,7 @@ processRecs rs = do
     (bs, cbs) <- unzip <$> mapM promote classes
     return (rfBind ++ concat bs, M.fromList cbs)
 
-promote :: [(Rec,Rec)] -> PP ([Expl],(Id,Class))
+promote :: [(Rec,Rec)] -> PP ([Bind],(Id,Class))
 promote rs@((sp,_):_) = do
     -- All the classes that inherit from a type
     let imps = sp : map snd rs
@@ -198,22 +193,21 @@ makeSuperClass (Rec _ t ss fs) impl =
 
 -- Return the list of overloaded field bindings and the
 -- list of type-specific bindings
-bindSup :: Id -> ([Expl], [Stub]) -> Rec -> PP ([Expl], [Stub])
+bindSup :: Id -> ([Bind], [Stub]) -> Rec -> PP ([Bind], [Stub])
 bindSup cls (bs,stubs) r@(Rec q t _ _) = do 
     let fbs = fieldBinds r
         (over,under) = split inStubs fbs
         --TODO VALIDATE THIS ASSUMPTION
-        obs = map (\(i,_,a) -> (i,a)) over
     unless (length stubs == length over) 
            (fail "Must include all fields of super type")
-    let stbs = foldl (addStub cls (q :=> t)) stubs obs
+    let stbs = foldl (addStub cls (q :=> t)) stubs over
     return (under ++ bs, stbs)
-    where inStubs (b,_,_) = isJust (find (\(i,_,_) -> i == b) stubs)
+    where inStubs b = isJust (find (\(i,_,_) -> i == bindName b) stubs)
 
-fieldBinds :: Rec -> [Expl]
+fieldBinds :: Rec -> [Bind]
 fieldBinds (Rec q t _ fs) = zipWith f fs [0..]
     where f (n, ft) i = let sch = quantQual q ([ft] `mkFun` t)
-                        in (n, sch, ([], Var ("#" ++ show (i :: Int))))
+                        in Bind n (Annot sch $ Var ("#" ++ show (i :: Int)))
 
 
 filterInherits :: [Rec] -> PP ([(Rec,Rec)],[Rec])
@@ -231,16 +225,16 @@ filterInherits rs = do (a,b,_) <- foldM f ([],[],[]) rs
           supDefined s = find (\x -> getCons s == dTCons x)
 
 
-overload :: [Expl] -> PP ([Binding], ClassEnv)
+overload :: [Bind] -> PP ([Bind], ClassEnv)
 overload bs = do
-    let groups = groupExpl bs
+    let groups = groupWith bindName bs
         (under,over) = split ((1 ==) . length) groups
     ce <- M.unions <$> mapM overBehavior over
-    let bnds = map Expl (concat under)
+    let bnds = concat under
     return (bnds, ce)
 
-overBehavior :: [Expl] -> PP ClassEnv
-overBehavior bs@((i,_, _):_) = do
+overBehavior :: [Bind] -> PP ClassEnv
+overBehavior bs@((Bind i _):_) = do
     pairs <- mapM bindPairs bs
     let cname = "_over_" ++ i
         v = TVar $ Tyvar "^var" Star
@@ -252,9 +246,10 @@ overBehavior bs@((i,_, _):_) = do
           makeInst cls sc = do
                 (qs :=> t) <- freshInst sc  
                 return $ qs :=> IsIn cls [t]
-          bindPairs (_, sc, ex) = if null (tv sc)
-                then return (sc, Abs ex)
+          bindPairs (Bind _ (Annot sc ex)) = if null (tv sc)
+                then return (sc, ex)
                 else fail $ "Incomplete type signature for "++i
+          bindPairs _ = fail "something is horribly wrong"
 overBehavior _ = fail "overBehavior passed empty argument"
 
 freshInst :: Scheme -> PP (Qual Type)
@@ -269,10 +264,10 @@ consName _ = error "Cons Name passed not a constructor"
 behaviorNames :: ClassEnv -> [Id]
 behaviorNames = M.keys
 
-fullAp :: [Tycon] -> [Binding] -> PP ()
+fullAp :: [Tycon] -> [Bind] -> PP ()
 fullAp _ _ = return ()
 
-genMain :: [Binding] -> PP Expr
+genMain :: [Bind] -> PP Expr
 genMain bs = do
     let (m, bs') = split (("main" ==) . bindName) bs
     unless (length m == 1) (fail "Could not find main")
@@ -294,8 +289,8 @@ split :: (a -> Bool) -> [a] -> ([a], [a])
 split p = foldl f ([],[])
     where f (as,bs) x = if p x then (x:as,bs) else (as,x:bs)
 
-groupExpl :: [Expl] -> [[Expl]]
-groupExpl = groupWith (\(n,_,_) -> n)
+groupExpl :: [Bind] -> [[Bind]]
+groupExpl = groupWith bindName
 
 emptySch :: Scheme
 emptySch = Forall [Star] ([] :=> TGen 0)

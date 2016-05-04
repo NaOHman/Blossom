@@ -8,7 +8,6 @@ module Parser.Exprs
    ) where
 
 import Parser.Core
-import PreProcessor.Bindings
 import Parser.Patterns
 import Parser.Sugar
 import Data.Maybe
@@ -37,10 +36,10 @@ eVar = Var <$> try aName
 -- lambdas with explicitly typed arguments are contained within annotations.
 eAbs :: BParser Expr
 eAbs = do
-    (lam, mt) <- lambda
+    ((ps, e), mt) <- lambda
     return $ case mt of
-        Just sc  -> Annot (Abs lam) (quantUser sc)
-        Nothing -> Abs lam
+        Just sc  -> Annot (quantUser sc) (Abs ps e)
+        Nothing -> Abs ps e
 
 data ApDta = Field Id | RegAp [Expr]
 
@@ -61,8 +60,8 @@ eLet = try $ do
            sch <- opSufCons 
            ex <- equals_ *> expr
            return $ case sch of
-              Just s -> Let [Expl (i, quantAll s, expr2Alt ex)] eUnit
-              _ -> Let [Impl (i, expr2Alt ex)] eUnit
+              Just s -> Let [Bind i (Annot (quantAll s) ex)] eUnit
+              _ -> Let [Bind i ex] eUnit
 
 eCase :: BParser Expr
 eCase = Case <$> header <*> inlineBlock branch
@@ -70,12 +69,12 @@ eCase = Case <$> header <*> inlineBlock branch
           branch = do
             p <- pat <* arrow_
             ex <- exblock
-            return ([p], ex)
+            return (p, ex)
    
 {-eAnnot :: BParser Expr-}
 {-eAnnot = Annot <$> expr <*> (quantAll <$> sufCons)-}
 
-lambda :: BParser (Alt, Maybe (Qual Type))
+lambda :: BParser (([Pat], Expr), Maybe (Qual Type))
 lambda = do (p, mt) <- args
             ex <- exblock
             return ((p,ex), mt)

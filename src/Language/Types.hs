@@ -68,10 +68,6 @@ class Types t where
     apply :: Subst -> t -> t
     tv :: t -> [Tyvar]
 
-{-instance Types a => Types (Lex a) where-}
-    {-apply s (Lex p t) = Lex p (apply s t)-}
-    {-tv (Lex _ t) = tv t-}
-
 instance Types Type where
     apply s (TVar u) = fromMaybe (TVar u) (lookup u s)
     apply s (TAp l r) = TAp (apply s l) (apply s r)

@@ -2,10 +2,9 @@ module Language.Inference where
 
 import Language.Types
 import Language.Expressions
-{-import LangDef.Blossom-}
 import Language.Utils
 import Language.Program
-import PreProcessor.Bindings (splitImpl)
+import PreProcessor.Bindings
 import Data.List (union, intersect, partition, (\\))
 import Control.Monad (liftM, ap, zipWithM)
 
@@ -39,9 +38,9 @@ tiProgram ce as bgs = runTI $ do
 tiExpr :: Infer Expr Type
 tiExpr _ as (Var i) = lookupSc as i
 tiExpr _ _ (Lit l) = tiLit l
-tiExpr ce as (Abs a) = do 
+tiExpr ce as (Abs ps ex) = do 
     t <- newTVar Star
-    qs <- tiAlt ce as t a
+    qs <- tiAlt ce as t (ps, ex)
     return (qs, t)
 tiExpr ce as (Ap e1 e2) = do 
     (ps, t1) <- tiExpr ce as e1
@@ -54,10 +53,11 @@ tiExpr ce as (Let bg ex) = do (ps, as') <- tiBindGroup ce as (splitImpl bg)
                               (qs, t) <- tiExpr ce (as' ++ as) ex
                               return (ps++qs, t)
 tiExpr ce as (Case e bs) = do 
+    let alts = map (\(p,e') -> ([p],e')) bs
     (ps, te) <- tiExpr ce as e
     bt <- newTVar Star
     rt <- newTVar Star
-    qs <- tiAlts ce as bs bt
+    qs <- tiAlts ce as alts bt
     let err = "CASE" ++ show (Case e bs)
     unify err bt (te `func` rt)
     return (ps ++ qs, rt) 
@@ -153,10 +153,10 @@ defaultedPreds  = withDefaults (\vps _ -> concatMap snd vps)
 ambiguities :: [Tyvar] -> [Pred] -> [Ambiguity]
 ambiguities vs ps = [(v, filter(elem v . tv) ps) | v <- tv ps \\ vs ]
 
-tiExpl :: ClassEnv -> [Assump] -> Expl -> TI [Pred]
-tiExpl ce as (_, sc, alt) = do 
+tiExpl :: ClassEnv -> [Assump] -> Bind -> TI [Pred]
+tiExpl ce as (Bind _ (Annot sc ex)) = do 
     (qs :=> t) <- freshInst sc
-    ps         <- tiAlt ce as t alt
+    ps         <- tiAlt ce as t (toAlt ex)
     s          <- getSubst
     let qs'     = apply s qs
         t'      = apply s t
@@ -171,20 +171,21 @@ tiExpl ce as (_, sc, alt) = do
         fail "context too weak"
       else
         return ds
+tiExpl _ _ _ = fail "something is horribly wrong" 
 
-restricted :: [Impl] -> Bool
+restricted :: [Bind] -> Bool
 restricted = any simple 
-    where simple (_,([],_)) = True
-          simple _ = False
+    where simple (Bind _ Abs{}) = False
+          simple _ = True
 
 
-tiImpls :: Infer [Impl] [Assump]
+tiImpls :: Infer [Bind] [Assump]
 tiImpls ce as bs = do 
     ts <- mapM (\_ -> newTVar Star) bs
-    let is    = map fst bs --names of bindings
+    let is    = map bindName bs --names of bindings
         scs   = map toScheme ts --empty schemes
         as'   = zipWith (:>:) is scs ++ as -- assume each binding
-        altss = map snd bs -- get the expression for the bindings
+        altss = map (toAlt . bindExpr) bs -- get the expression for the bindings
     pss <- zipWithM (tiAlt ce as') ts altss
     s   <- getSubst
     let ps'     = apply s (concat pss)
@@ -203,7 +204,7 @@ tiImpls ce as bs = do
 
 tiBindGroup :: Infer BindGroup [Assump]
 tiBindGroup ce as (es,iss) = do 
-    let as' = [ v:>:sc | (v,sc,_) <- es ]
+    let as' = [ v:>:sc | (Bind v (Annot sc _)) <- es ]
     (ps, as'') <- tiSeq tiImpls ce (as'++as) iss
     qss        <- mapM (tiExpl ce (as''++as'++as)) es
     return (ps++concat qss, as''++as')
@@ -261,3 +262,7 @@ freshInst (Forall ks qt) = do ts <- mapM newTVar ks
 
 runTI :: TI a -> a
 runTI (TI f) = x where (_,_,x) = f nullSubst 0
+
+toAlt :: Expr -> ([Pat], Expr)
+toAlt (Abs ps e) = (ps, e)
+toAlt e = ([], e)

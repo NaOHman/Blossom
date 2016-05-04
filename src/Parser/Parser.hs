@@ -1,8 +1,6 @@
 module Parser.Parser where
 
 import Parser.Core
-import PreProcessor.Bindings
-{-import LangDef.Blossom (mkFun)-}
 import Parser.Exprs
 import Language.Utils
 import Language.Expressions
@@ -10,7 +8,7 @@ import Language.Program
 import Parser.Types
 import Control.Monad.State (evalStateT)
 
-data Top = Bind Binding
+data Top = Bnd Bind
          | Imp Implementation
          | ADT Adt
          | RDT Rec
@@ -35,29 +33,29 @@ blossom = splitTops <$> re []
                           _ -> go prg
  
 gVar :: BParser Top
-gVar = try $ Bind <$> do 
+gVar = try $ Bnd <$> do 
     name <- uName
     sch <- opSufCons
     ex <- equals_ *> expr
     return $ case sch of
-        Just qt -> Expl (name, quantAll qt, expr2Alt ex)
-        _      -> Impl (name, expr2Alt ex)
+        Just qt -> Bind name $ Annot (quantAll qt) ex
+        _      -> Bind name ex
   
 
 fBind :: BParser Top
-fBind = Bind <$> fDec
+fBind = Bnd <$> fDec
 
-fDec :: BParser Binding
+fDec :: BParser Bind
 fDec = try $ do 
       q <- try topQual
       n <- fun_ *> lName
       (p, mqt) <- args
       ex <- exblock
-      let lam = Abs (p, ex)
+      let lam = Abs p ex
       return $ case mqt of
           Just (qs :=> t) -> let sch = quantUser ((q ++ qs) :=> t)
-                             in Expl (n, sch, expr2Alt lam)
-          Nothing -> Impl (n, expr2Alt lam)
+                             in Bind n (Annot sch lam)
+          Nothing -> Bind n lam
 
 adt :: BParser Top
 adt = try $ do
@@ -102,18 +100,12 @@ implem = try $ do
       q <- topQual
       t <- ptype
       bhvr <- is_ *> uName <* because_
-      impls <- block impl
+      impls <- block fDec
       return $ Imp (Im q t bhvr impls)
-
-impl :: BParser Impl
-impl =  do b <- fDec
-           case b of 
-                Impl i -> return i
-                _ -> fail "Don't specify the types of your implementations"
 
 splitTops :: [Top] -> Program
 splitTops = foldl split (Program [] [] [] [] [])
-    where split p (Bind b) = p {pBind = b : pBind p}
+    where split p (Bnd b) = p {pBind = b : pBind p}
           split p (RDT  r) = p {pRdt   = r : pRdt p}
           split p (ADT  a) = p {pAdt   = a : pAdt p}
           split p (Bvr  b) = p {pBvr   = b : pBvr p}

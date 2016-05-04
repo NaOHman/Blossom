@@ -44,17 +44,38 @@ runBlossom file args dbg = do
             {-let bgs = map fixBG bg-}
             let (assumps,s) = tiProgram ce as bg
             when (dbgTypeCheck dbg) (debugTypeCheck assumps)
-            let myBinds = map toImpl $ bs ++ apply s (flatten bg)
+            let myBinds = bs ++ apply s (flatten bg)
             interpretBlossom myBinds args (dbgInterpret dbg)
 
 debugParser :: Program -> IO()
-debugParser = undefined
+debugParser (Program bs is as rs bhs) = do 
+    putStrLn "_______PREPROC OUTPUT_____"
+    putStrLn "BEHAVIORS:"
+    mapM_ print bhs
+    putStrLn "IMPLEMENTATIONS:"
+    mapM_ print is
+    putStrLn "DATA TYPES:"
+    mapM_ print rs
+    mapM_ print as
+    putStrLn "BINDINGS:"
+    mapM_ print bs
 
-debugPreProc :: ClassEnv -> [Assump] -> [BindGroup] -> [Binding] -> IO()
-debugPreProc = undefined
+debugPreProc :: ClassEnv -> [Assump] -> [BindGroup] -> [Bind] -> IO()
+debugPreProc ce as bg bs = do
+    putStrLn "_______PREPROC OUTPUT_____"
+    putStrLn "CLASSENV:"
+    print ce
+    putStrLn "ASSUMPS:"
+    mapM_ print as
+    putStrLn "BINDGROUP:"
+    mapM_ print bg
+    putStrLn "BINDINGS:"
+    mapM_ print bs
 
 debugTypeCheck :: [Assump] -> IO()
-debugTypeCheck = undefined
+debugTypeCheck as = do
+    putStrLn "_______TYPECHECKER OUTPUT_____"
+    mapM_ print as
 
 parseArgs :: Monad m => [String] -> m (Dbg, String, [String])
 parseArgs [f] = return (def, f, [])

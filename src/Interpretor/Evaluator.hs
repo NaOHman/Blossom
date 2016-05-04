@@ -1,5 +1,3 @@
-{-# LANGUAGE TupleSections #-}
-
 module Interpretor.Evaluator where
 
 import Language.Expressions
@@ -11,20 +9,18 @@ import Control.Monad.State
 
 type MEval a = StateT Bool IO a
 
-interpretBlossom ::  [Impl] -> [String] -> Bool -> IO ()
+interpretBlossom ::  [Bind] -> [String] -> Bool -> IO ()
 interpretBlossom bs args = evalStateT (runProg bs args)
 
-runProg :: [Impl] -> [String] -> MEval ()
+runProg :: [Bind] -> [String] -> MEval ()
 runProg bs _ =  do 
-    vs <- mapM f bs
-    let sc = Scope $ zip (map fst bs) vs
-        (Just (VLambda _ mn)) = lookupScope "main" sc
+    sc <- Scope <$> mapM eval' bs
+    let (Just (VLambda _ mn)) = lookupScope "main" sc
     void $ eval (sc `add` defScope) mn
-    where eval' _ _ e@Over{} = return $ VOver e
-          eval' ('$':_) _ (Abs (ps,e)) = return $ VLambda ps e
-          eval' _ s ex = eval s ex
-          f (i,([],ex)) = eval' i defScope ex
-          f (i, a) = eval' i defScope (Abs a)
+    where eval' (Bind i (e@Over{})) = return $ (i, VOver e)
+          eval' (Bind i (Annot _ e@Over{})) = return $ (i, VOver e)
+          eval' (Bind i@('$':_) (Abs ps e)) = return $ (i, VLambda ps e)
+          eval' (Bind i ex) = eval defScope ex >>= \v -> return (i,v)
 
 eval :: Scope -> Expr -> MEval Value
 eval _ (Lit l) = do
@@ -37,7 +33,7 @@ eval s (Var i) = do
         Nothing -> fail $ "Variable " ++ i ++ " is ubound"
         Just v -> return v
         
-eval _ (Abs (p,e)) =  do
+eval _ (Abs p e) =  do
     dprint $ "Eval lambda " ++ show p ++ " -> " ++ show e
     return (VLambda p e)
 
@@ -53,7 +49,7 @@ eval s (Case e cs) = do
     dprint $ "Case evaluated to " ++ show v
     dprint  "!!!!!!!!!!!!!!!!"
     pickCase v cs
-    where pickCase v (([p],e'):cs') = do
+    where pickCase v ((p,e'):cs') = do
               dprint (show p)
               dprint (show v)
               case match p v of
@@ -61,7 +57,7 @@ eval s (Case e cs) = do
                 _ -> pickCase v cs'
           pickCase _ _ = fail "Couldn't match pattern" --TODO Return a fail value
 
-eval s (Annot e _) = eval s e
+eval s (Annot _ e) = eval s e
 
 eval sco o@(Over i tv' ps) = do
     ex <- findMatch tv' ps
@@ -109,7 +105,6 @@ dprint :: String -> MEval()
 dprint msg = do debug <- get
                 when debug $ liftIO (putStrLn msg)
 
-letBinds :: Scope -> [Binding] -> MEval Scope
+letBinds :: Scope -> [Bind] -> MEval Scope
 letBinds s bs = Scope <$> mapM bind' bs 
-    where bind' (Expl (i,_,(_,e))) = (i,) <$> eval s e
-          bind' (Impl (i,(_,e))) = (i,) <$> eval s e
+    where bind' (Bind i e) = eval s e >>= \v -> return (i,v)

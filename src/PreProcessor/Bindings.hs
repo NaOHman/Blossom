@@ -5,8 +5,6 @@ module PreProcessor.Bindings
     , bindExpr
     , bindName
     , flatten
-    , toImpl
-    , expr2Alt
     ) 
     where
 
@@ -16,19 +14,19 @@ import Data.Char (isLower)
 import Data.Graph hiding (scc)
 import Data.Graph.SCC
 
-toBindGroup :: [Binding] -> [BindGroup]
+toBindGroup :: [Bind] -> [BindGroup]
 toBindGroup = reverse . map splitImpl . depGroups []
 
-splitImpl :: [Binding] -> BindGroup
+splitImpl :: [Bind] -> BindGroup
 splitImpl bs =
             let (es, is) = splitBinds bs
-                eIds = map (\(i,_,_) -> i) es
-                iGroups = depGroups eIds (map Impl is)
-                iBinds = map (map (\(Impl tpl) -> tpl)) iGroups
+                eIds = map bindName es
+                iBinds = depGroups eIds is
+                {-iBinds = map (map (\(Impl tpl) -> tpl)) iGroups-}
             in (es, iBinds)
         
 
-depGroups :: [Id] -> [Binding] -> [[Binding]]
+depGroups :: [Id] -> [Bind] -> [[Bind]]
 depGroups ids bs = 
     let es = map (findDeps ids) bs
         (dGraph, mapping, _) = graphFromEdges es
@@ -37,7 +35,7 @@ depGroups ids bs =
         nodeVal (b,_,_) = b
     in map (map (nodeVal . mapping)) verts
         
-findDeps :: [Id] -> Binding -> (Binding, Id, [Id])
+findDeps :: [Id] -> Bind -> (Bind, Id, [Id])
 findDeps ids b = let i = bindName b
                  in (b, i, userVars (bindExpr b) \\ (i:ids))
 
@@ -45,13 +43,13 @@ userVars :: Expr -> [Id]
 userVars (Var i@(c:_)) 
     | isLower c = [i | i /= "print"]
     | otherwise = []
-userVars (Abs (ps,e)) = userVars e \\ nub (concatMap pvar ps)
+userVars (Abs ps e) = userVars e \\ nub (concatMap pvar ps)
 userVars (Ap e1 e2) = nub $ userVars e1 ++ userVars e2
 userVars (Let bs e) = let ids = map bindName bs
                           es  = map bindExpr bs
                       in nub (userVars e ++ concatMap userVars es) \\ ids
-userVars (Case e bs) = nub $ userVars e ++ concatMap (userVars . Abs) bs
-userVars (Annot e _) = userVars e
+userVars (Case e bs) = nub $ userVars e ++ concatMap (\(p,e') ->  userVars e' \\ nub (pvar p)) bs
+userVars (Annot _ e) = userVars e
 userVars _ = []
 -- overloaded functions don't really count as user vars for our purposes
 
@@ -61,28 +59,17 @@ pvar (PAs v p) = v : pvar p
 pvar (PCons _ ps) = nub $ concatMap pvar ps
 pvar _ = []
                            
-splitBinds :: [Binding] -> ([Expl], [Impl])
+splitBinds :: [Bind] -> ([Bind], [Bind])
 splitBinds = foldl f ([],[]) 
-    where  f (es, is) (Expl e) = (e:es,is) 
-           f (es, is) (Impl i) = (es,i:is)
+    where  f (es, is) e@(Bind _ (Annot _ _)) = (e:es,is) 
+           f (es, is) i = (es,i:is)
 
-bindName :: Binding -> Id
-bindName (Expl (i,_,_)) = i
-bindName (Impl (i,_)) = i
+bindName :: Bind -> Id
+bindName (Bind i _) = i
 
-bindExpr :: Binding -> Expr
-bindExpr (Impl (_,(_,e))) = e
-bindExpr (Expl (_,_,(_,e))) = e
+bindExpr :: Bind -> Expr
+bindExpr (Bind _ e) = e
 
-toImpl :: Binding -> Impl
-toImpl (Impl t) = t
-toImpl (Expl (i,_,e)) = (i,e)
-
-expr2Alt :: Expr -> Alt
-expr2Alt (Abs a) = a
-expr2Alt e = ([], e)
-
-
-flatten :: [BindGroup] -> [Binding]
+flatten :: [BindGroup] -> [Bind]
 flatten = concatMap flatten' 
-    where flatten' (es, is) =  map Expl es ++ map Impl (concat is)
+    where flatten' (es, is) =  es ++ (concat is)
