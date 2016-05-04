@@ -1,3 +1,16 @@
+{- |
+Module      : Parser.Exprs
+Description : Parsers for Expressions
+Copyright   : (c) Jeffrey Lyman
+Liscense    : TBD
+
+Maintainer  : JeffreyTLyman@gmail.com
+Stability   : experimental
+Portability : portable
+
+This module defines a number of parsers which can be used to parse Blossom Expressions.
+-}
+
 module Parser.Exprs 
    ( expr
    , lambda
@@ -116,13 +129,6 @@ chain _ = error "Chain applied to an empty list"
 opAp :: Id -> Expr -> Expr
 opAp s = Ap (Var s)
 
-{-argArrow :: BParser [(Id, Maybe (Qual Type))]-}
-{-argArrow = csl arg <* arrow_-}
-    {-where arg = (,) <$> lName <*> opSufCons-}
-
-{-fArgs :: BParser [Expr]-}
-{-fArgs = csl expr-}
-
 eUnit :: Expr
 eUnit = Lit LNull
 
@@ -149,6 +155,7 @@ toVars (Nothing:ts) = do t <- newTVar Star
 toVars (Just t :ts) = do tss <- toVars ts
                          return $ t:tss
 
+-- TODO this belongs elsewhere
 quantUser :: Qual Type -> Scheme
 quantUser qt = let tvs = filter userDef (tv qt)
                in quantify tvs qt

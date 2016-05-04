@@ -1,7 +1,21 @@
+{- |
+Module      : Parser.Sugar
+Description : Parsers for Syntactic Sugar
+Copyright   : (c) Jeffrey Lyman
+Liscense    : TBD
+
+Maintainer  : JeffreyTLyman@gmail.com
+Stability   : experimental
+Portability : portable
+
+This module defines a number of parsers which help parse sugary constructs such as Lists, Strings,
+and Tuples. Sugar is defined in it's own module because the same sugar generally applies to types, 
+patterns, and expressions.
+-}
+
 module Parser.Sugar where
 
 import Parser.Core
-import Parser.Literals
 import Language.Expressions
 import Control.Monad (void)
 

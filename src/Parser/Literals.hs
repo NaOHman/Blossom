@@ -1,6 +1,20 @@
 {-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts #-}
 
-module Parser.Literals (literal, escapedChar) where
+{- |
+Module      : Parser.Literals
+Description : A Module that provides parsers for literal values
+Copyright   : (c) Jeffrey Lyman
+Liscense    : TBD
+
+Maintainer  : JeffreyTLyman@gmail.com
+Stability   : experimental
+Portability : portable
+
+This module parses parsers literals 
+-}
+
+
+module Parser.Literals (literal) where
 
 import Parser.Core
 import Language.Expressions
@@ -26,9 +40,3 @@ lBool = try (LBool True <$ true_) <|> try (LBool False <$ false_)
 
 lNull :: BParser Literal
 lNull = LNull <$ symbol "?"
-
-escapedChar :: BParser Char
-escapedChar = char '\\' >> choice (zipWith escape codes reps) <?> "Bad escape code"
-    where escape c r = char c >> return r
-          codes = "ntr\\\"'" 
-          reps = "\n\t\r\\\"'" 

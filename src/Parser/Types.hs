@@ -1,9 +1,21 @@
+{- |
+Module      : Parser.Types
+Description : Parsers for Types
+Copyright   : (c) Jeffrey Lyman
+Liscense    : TBD
+
+Maintainer  : JeffreyTLyman@gmail.com
+Stability   : experimental
+Portability : portable
+
+This module defines a number of parsers which can be used to parse Blossom Types and qualifiers.
+-}
+
 module Parser.Types where
 
 import Parser.Core
 import Language.Expressions
 import Language.Utils
-{-import LangDef.Blossom-}
 import Parser.Sugar
 
 --Qualifier parsing

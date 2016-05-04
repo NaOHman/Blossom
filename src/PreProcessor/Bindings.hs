@@ -22,10 +22,17 @@ splitImpl bs =
             let (es, is) = splitBinds bs
                 eIds = map bindName es
                 iBinds = depGroups eIds is
-                {-iBinds = map (map (\(Impl tpl) -> tpl)) iGroups-}
             in (es, iBinds)
-        
 
+-- This function splits a list of bindings into dependency groups, which
+-- are groups of functions that are mutually recursive. 
+--
+-- We map out the dependencies of function as a directed graph where 
+-- each node is a function, and each edge leaving a node points to
+-- a function that the first function depends on.
+--
+-- The stongly connected componets of that graph are our dependency
+-- groups
 depGroups :: [Id] -> [Bind] -> [[Bind]]
 depGroups ids bs = 
     let es = map (findDeps ids) bs

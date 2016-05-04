@@ -1,4 +1,19 @@
-module Parser.Parser where
+{- |
+Module      : Parser.Parser
+Description : A Module that provides top level parsers
+Copyright   : (c) Jeffrey Lyman
+Liscense    : TBD
+
+Maintainer  : JeffreyTLyman@gmail.com
+Stability   : experimental
+Portability : portable
+
+This module contains parsers for all top level blossom syntactic constructs which are
+Global Variables, Function Definitions, Behavior Declarations, Data Declarations, and
+Behavior Implementations. 
+-}
+
+module Parser.Parser (parseBlossomFile, blossomParser) where
 
 import Parser.Core
 import Parser.Exprs

@@ -33,6 +33,7 @@ module Parser.Lexeme
    , opCsl
    , eol_
    , nonIndented
+   , escapedChar
    ) where
 
 import Text.Megaparsec as X
@@ -69,6 +70,12 @@ opList p = F.concat <$> optional p
 
 lexeme :: BParser a -> BParser a
 lexeme = L.lexeme sc
+
+escapedChar :: BParser Char
+escapedChar = char '\\' >> choice (zipWith escape codes reps) <?> "Bad escape code"
+    where escape c r = char c >> return r
+          codes = "ntr\\\"'" 
+          reps = "\n\t\r\\\"'" 
 
 sc :: BParser ()
 sc = L.space (void $ oneOf " \t") lineCmnt blockCmnt

@@ -1,3 +1,16 @@
+{- |
+Module      : Parser.Patterns
+Description : A Module that provides parsers for Patterns
+Copyright   : (c) Jeffrey Lyman
+Liscense    : TBD
+
+Maintainer  : JeffreyTLyman@gmail.com
+Stability   : experimental
+Portability : portable
+
+This module contains parsers for Blossom Patterns.
+-}
+
 module Parser.Patterns (pat, pVar) where
 
 import Parser.Core
