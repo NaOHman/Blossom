@@ -1,7 +1,6 @@
 {-# LANGUAGE TupleSections #-}
 module PreProcessor.PreProcessor where
 
-{-import LangDef.Blossom (mkFun)-}
 import Language.Types
 import PreProcessor.Bindings
 import Language.Utils hiding (find)
@@ -28,7 +27,7 @@ preprocess (Program bnds imps adt rdt bvs) = do
     bhCE <- makeCE bvs imps
 
     let constructors = concatMap dCstrs adt ++ concatMap dCstrs rdt 
-        ce = M.unions [bhCE, overCE, recCE, fieldCE] 
+        ce = M.unions [defClasses, bhCE, overCE, recCE, fieldCE] 
         stubs = ceStubs ce
         fassumps = bindingAssumps (fbs ++ overBinds bhCE)
         stubAssumps = map (\(i,s,_) -> i :>: s) stubs
@@ -131,10 +130,10 @@ addImp ce (Im q t i ss) = do
    let stbs' = foldl (addStub i (q :=> (TCons $  getCons t))) stbs ss
    return (M.insert i (sc,ist:is, stbs') ce)
 
-addStub :: Id -> Qual Type -> [Stub] -> (Id, Expr) -> [Stub] 
+addStub :: Id -> Qual Type -> [Stub] -> Impl -> [Stub] 
 addStub cls qt stbs (sn, alt) = map add' stbs
     where add' (n, sc, bs)
-              | n == sn = (n, sc, (pInst cls qt sc, alt) : bs)
+              | n == sn = (n, sc, (pInst cls qt sc, Abs alt) : bs)
               | otherwise = (n, sc, bs)
 
 stubNames :: ClassEnv -> [Id]
@@ -204,7 +203,7 @@ bindSup cls (bs,stubs) r@(Rec q t _ _) = do
     let fbs = fieldBinds r
         (over,under) = split inStubs fbs
         --TODO VALIDATE THIS ASSUMPTION
-        obs = map (\(i,_,(_,e)) -> (i,e)) over
+        obs = map (\(i,_,a) -> (i,a)) over
     unless (length stubs == length over) 
            (fail "Must include all fields of super type")
     let stbs = foldl (addStub cls (q :=> t)) stubs obs
@@ -254,7 +253,7 @@ overBehavior bs@((i,_, _):_) = do
                 (qs :=> t) <- freshInst sc  
                 return $ qs :=> IsIn cls [t]
           bindPairs (_, sc, ex) = if null (tv sc)
-                then return (sc,ex)
+                then return (sc, Abs ex)
                 else fail $ "Incomplete type signature for "++i
 overBehavior _ = fail "overBehavior passed empty argument"
 

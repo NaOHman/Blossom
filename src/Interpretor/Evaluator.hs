@@ -2,27 +2,29 @@
 
 module Interpretor.Evaluator where
 
-import Models.Expressions
+import Language.Expressions
 import Interpretor.Builtins
 import Interpretor.Values
 import Control.Monad
-import qualified Types.Utils as T
+import qualified Language.Utils as T
 import Control.Monad.State
 
 type MEval a = StateT Bool IO a
 
-interpretBlossom ::  [(Id, Expr)] -> [String] -> Bool -> IO ()
+interpretBlossom ::  [Impl] -> [String] -> Bool -> IO ()
 interpretBlossom bs args = evalStateT (runProg bs args)
 
 runProg :: [Impl] -> [String] -> MEval ()
 runProg bs _ =  do 
-    vs <- mapM (\(i,ex) -> eval' i defScope ex) bs
+    vs <- mapM f bs
     let sc = Scope $ zip (map fst bs) vs
         (Just (VLambda _ mn)) = lookupScope "main" sc
     void $ eval (sc `add` defScope) mn
     where eval' _ _ e@Over{} = return $ VOver e
           eval' ('$':_) _ (Abs (ps,e)) = return $ VLambda ps e
           eval' _ s ex = eval s ex
+          f (i,([],ex)) = eval' i defScope ex
+          f (i, a) = eval' i defScope (Abs a)
 
 eval :: Scope -> Expr -> MEval Value
 eval _ (Lit l) = do
@@ -109,5 +111,5 @@ dprint msg = do debug <- get
 
 letBinds :: Scope -> [Binding] -> MEval Scope
 letBinds s bs = Scope <$> mapM bind' bs 
-    where bind' (Expl (i,_,e)) = (i,) <$> eval s e
-          bind' (Impl (i,e)) = (i,) <$> eval s e
+    where bind' (Expl (i,_,(_,e))) = (i,) <$> eval s e
+          bind' (Impl (i,(_,e))) = (i,) <$> eval s e

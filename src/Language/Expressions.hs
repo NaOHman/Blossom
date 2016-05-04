@@ -1,5 +1,5 @@
 module Language.Expressions 
-    ( module Models.Core
+    ( module Language.Core
     , module Language.Types
     , Expr (..) , Literal (..)
     , Pat (..)
@@ -12,7 +12,7 @@ module Language.Expressions
     , Binding(..)
     ) where
 
-import Models.Core
+import Language.Core
 import Language.Types
 import Data.List (intercalate)
 import Control.Arrow (second)

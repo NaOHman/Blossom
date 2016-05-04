@@ -1,6 +1,6 @@
 module Interpretor.Values where
 
-import Models.Expressions
+import Language.Expressions
 import Control.Monad
 import Data.List (intercalate, unionBy)
 import Data.Char (isUpper)

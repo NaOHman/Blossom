@@ -29,7 +29,7 @@ instance Functor TI where
    
 tiProgram :: ClassEnv -> [Assump] -> [BindGroup] -> ([Assump],Subst)
 tiProgram ce as bgs = runTI $ do
-    (ps, as') <- tiSeq tiBindGroup ce as bgs
+    (ps, as') <- tiSeq tiBindGroup ce (as ++ blossomAssumps) bgs
     s         <- getSubst
     rs        <- reduce ce (apply s ps)
     s'        <- defaultSubst ce [] rs

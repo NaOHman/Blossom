@@ -1,7 +1,6 @@
 module Language.Utils where
 
 import Language.Types
-{-import LangDef.Blossom-}
 import Language.Program
 import Data.List (intersect)
 import Data.Maybe (isJust)
@@ -203,3 +202,44 @@ a `func` b = TAp (TAp tArrow a) b
 
 mkFun :: [Type] -> Type -> Type
 mkFun ts t = foldr func t ts
+
+blossomAssumps :: [Assump]
+blossomAssumps = [
+    "+UN"    :>: unary "Num"
+    ,"-UN"    :>: unary "Num"
+    ,"+"      :>: binary "Num"
+    ,"-"      :>: binary "Num"
+    ,"/"      :>: binary "Fractional"
+    ,"*"      :>: binary "Num"
+    ,"//"     :>: binary "Integral"
+    ,"%"      :>: binary "Integral"
+    ,"<"      :>: relational "Ord"
+    ,">"      :>: relational "Ord"
+    ,">="     :>: relational "Ord"
+    ,"<="     :>: relational "Ord"
+    ,"=="     :>: relational "Eq"
+    ,"and"    :>: bbool
+    ,"or"     :>: bbool
+    ,"xor"    :>: bbool
+    ,"not"    :>: ubool
+    ,"!seq"   :>: Forall [Star,Star] ([] :=> mkFun [g0, g1] g1)
+    ,"print"  :>: sc1 ([IsIn "Showable" [g0]] :=> func g0 tNull)
+    ,"[nil]"  :>:sc1 ([] :=> tList g0)
+    ,"[cons]" :>: sc1 ([] :=> mkFun [g0, tList g0] (tList g0))
+    ] ++ tupleAssumps
+    where binary q = sc1 ([IsIn q [g0]] :=> mkFun [g0,g0] g0)
+          relational q = sc1 $ [IsIn q [g0]] :=> mkFun [g0,g0] tBool
+          unary q = sc1 $ [IsIn q [g0]] :=> func g0 g0
+          bbool = Forall [] ([]:=> mkFun [tBool,tBool] tBool)
+          ubool = Forall [] ([] :=> func tBool tBool)
+          g0 = TGen 0
+          g1 = TGen 1
+          sc1 = Forall [Star]
+   
+tupleAssumps :: [Assump]
+tupleAssumps = map tplAsmp [2..20]
+    where tplAsmp n = 
+            let ks = replicate n Star
+                ts = map TGen [0..n]
+                name = tplName n
+           in (name :>: Forall ks ([] :=> tTuple ts))

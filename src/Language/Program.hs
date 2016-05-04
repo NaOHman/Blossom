@@ -8,6 +8,7 @@ module Language.Program
     , Adt(..)
     , Behavior(..)
     , Implementation(..)
+    , defClasses
     ) where
 
 import Language.Expressions as X
@@ -43,3 +44,18 @@ data Implementation = Im [Pred] Type Id [Impl]
     deriving Show
 
 type ClassEnv = M.Map Id Class
+
+defClasses :: ClassEnv
+defClasses = M.fromList $ map mkCls 
+    [("Eq", [], [tInt, tChar, tFloat, tBool])
+    ,("Showable", [], [tInt, tChar, tFloat, tBool, tString])
+    ,("Ord", ["Eq"], [tInt, tChar, tFloat])
+    ,("Num", ["Eq","Show"], [tInt, tFloat])
+    ,("Real", ["Num","Ord"], [tInt, tFloat])
+    ,("Fractional", ["Num"], [tFloat])
+    ,("Floating", ["Fractional"], [tFloat])]
+
+mkCls :: (Id, [Id], [Type]) -> (Id, ([Id], [Qual Pred], [Stub]))
+mkCls (i,ss,is) = (i, (ss, ints, stubs))
+    where ints = map (\t -> [] :=> IsIn i [t]) is
+          stubs = []

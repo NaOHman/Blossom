@@ -2,10 +2,10 @@ import Parser.Parser
 import PreProcessor.PreProcessor
 import PreProcessor.Bindings
 import Language.Inference
-{-import LangDef.Blossom-}
 import Interpretor.Evaluator
-import Models.Program
-import qualified Data.Map as M
+import Language.Program
+import Language.Expressions
+{-import qualified Data.Map as M-}
 import System.Environment
 import System.Exit
 import Data.List (isPrefixOf)
@@ -38,11 +38,11 @@ runBlossom file args dbg = do
         Right prg -> do
             when (dbgParser dbg) (debugParser prg)
             let (ce', as', bg, bs) = validate prg
-                ce = ce' `M.union` classes -- TODO Push into PreProcessor logic
-                as = as' ++ blossomAssumps
+                ce = ce' -- `M.union` classes -- TODO Push into PreProcessor logic
+                as = as' -- ++ blossomAssumps
             when (dbgPreProc dbg) (debugPreProc ce as bg bs)
-            let bgs = map fixBG bg
-                (assumps,s) = tiProgram ce as bgs
+            {-let bgs = map fixBG bg-}
+            let (assumps,s) = tiProgram ce as bg
             when (dbgTypeCheck dbg) (debugTypeCheck assumps)
             let myBinds = map toImpl $ bs ++ apply s (flatten bg)
             interpretBlossom myBinds args (dbgInterpret dbg)

@@ -1,5 +1,5 @@
 module Language.Types 
-    ( module Models.Core
+    ( module Language.Core
     , Subst
     , Kind(..)
     , Type(..)
@@ -22,10 +22,11 @@ module Language.Types
     , tArrow
     , tTuple
     , tList
+    , tString
     , tplName
     ) where
 
-import Models.Core
+import Language.Core
 import Data.List (nub, union,intercalate)
 import Data.Maybe (fromMaybe)
 
@@ -185,8 +186,8 @@ tUnit = tcons "()" Star
 tList :: Type -> Type
 tList = TAp (tcons "List" (KFun Star Star))
 
-{-tString :: Type-}
-{-tString = tList tChar-}
+tString :: Type
+tString = tList tChar
 
 tplName :: Int -> String 
 tplName n = "(" ++ replicate (n-1) ',' ++ ")"
@@ -205,5 +206,3 @@ tTuple ts =
 kAry :: Int -> Kind
 kAry 0 = Star
 kAry n = KFun Star (kAry (n-1))
-
-
