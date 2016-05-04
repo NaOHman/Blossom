@@ -1,16 +1,19 @@
 {-# LANGUAGE TupleSections #-}
 module PreProcessor.PreProcessor where
 
-import LangDef.Blossom (mkFun)
-import Models.Program
-import Models.PreProcessor
+{-import LangDef.Blossom (mkFun)-}
+import Language.Types
 import PreProcessor.Bindings
-import Types.Utils hiding (find)
+import Language.Utils hiding (find)
+import Language.Program
+import Language.Expressions
 import Control.Monad.State
 import qualified Data.Map.Strict as M
 import Data.List (find, sort, partition)
 import Data.Maybe (isJust)
 import GHC.Exts (groupWith)
+
+type PP a = State Int a
 
 validate :: Program -> (ClassEnv, [Assump], [BindGroup], [Binding])
 validate prg = evalState (preprocess prg) 0
@@ -29,7 +32,7 @@ preprocess (Program bnds imps adt rdt bvs) = do
         stubs = ceStubs ce
         fassumps = bindingAssumps (fbs ++ overBinds bhCE)
         stubAssumps = map (\(i,s,_) -> i :>: s) stubs
-        stubBins = map (\(i,s,ps) -> Expl (i,s, Over i (TVar $ Tyvar "" Star) ps)) stubs
+        stubBins = map (\(i,s,ps) -> Expl (i,s, expr2Alt $ Over i (TVar $ Tyvar "" Star) ps)) stubs
         assumps = makeCstrAssumps constructors ++ fassumps ++ stubAssumps
 
         impl' = map Impl impl
@@ -50,12 +53,12 @@ preprocess (Program bnds imps adt rdt bvs) = do
 
 replaceOverVars :: [Stub] -> [Binding] -> PP [Binding]
 replaceOverVars sts = mapM (repOV sts) 
-    where repOV ss (Expl (i,s,e)) = do
+    where repOV ss (Expl (i,s,(ps,e))) = do
                 e' <- rVars ss e
-                return $ Expl (i,s,e')
-          repOV ss (Impl (i,e)) = do
+                return $ Expl (i,s,(ps,e'))
+          repOV ss (Impl (i,(ps,e))) = do
                 e' <- rVars ss e
-                return $ Impl (i,e')
+                return $ Impl (i,(ps,e'))
 
 rVars :: [Stub] -> Expr -> PP Expr
 rVars ss (Ap e1 e2) = Ap <$> rVars ss e1 <*> rVars ss e2
@@ -76,7 +79,7 @@ bindingAssumps = map (\(Expl (i,s,_)) -> i :>: s)
 
 constrBinds :: [(Id, Scheme)] -> [Binding]
 constrBinds = map toBind 
-    where toBind (n, s) = Expl (n, s, Var n)
+    where toBind (n, s) = Expl (n, s, ([], Var n))
 
 makeCstrAssumps :: [(Id, Scheme)] -> [Assump]
 makeCstrAssumps = map (uncurry (:>:))
@@ -84,7 +87,7 @@ makeCstrAssumps = map (uncurry (:>:))
 overBinds :: ClassEnv -> [Binding]
 overBinds = M.foldMapWithKey f
     where f _ (_,_,os) = concatMap unpack os
-          unpack (i,_,ps) = map (\(sc,e) -> Expl (implName i sc, sc, e)) ps
+          unpack (i,_,ps) = map (\(sc,e) -> Expl (implName i sc, sc, expr2Alt $ e)) ps
 
 implName :: Id -> Scheme -> Id
 implName i sc = "$" ++ i ++  "#" ++ show sc
@@ -129,9 +132,9 @@ addImp ce (Im q t i ss) = do
    return (M.insert i (sc,ist:is, stbs') ce)
 
 addStub :: Id -> Qual Type -> [Stub] -> (Id, Expr) -> [Stub] 
-addStub cls qt stbs (sn, ex) = map add' stbs
+addStub cls qt stbs (sn, alt) = map add' stbs
     where add' (n, sc, bs)
-              | n == sn = (n, sc, (pInst cls qt sc, ex) : bs)
+              | n == sn = (n, sc, (pInst cls qt sc, alt) : bs)
               | otherwise = (n, sc, bs)
 
 stubNames :: ClassEnv -> [Id]
@@ -201,7 +204,7 @@ bindSup cls (bs,stubs) r@(Rec q t _ _) = do
     let fbs = fieldBinds r
         (over,under) = split inStubs fbs
         --TODO VALIDATE THIS ASSUMPTION
-        obs = map (\(i,_,e) -> (i,e)) over
+        obs = map (\(i,_,(_,e)) -> (i,e)) over
     unless (length stubs == length over) 
            (fail "Must include all fields of super type")
     let stbs = foldl (addStub cls (q :=> t)) stubs obs
@@ -211,7 +214,7 @@ bindSup cls (bs,stubs) r@(Rec q t _ _) = do
 fieldBinds :: Rec -> [Expl]
 fieldBinds (Rec q t _ fs) = zipWith f fs [0..]
     where f (n, ft) i = let sch = quantQual q ([ft] `mkFun` t)
-                        in (n, sch, Var ("#" ++ show (i :: Int)))
+                        in (n, sch, ([], Var ("#" ++ show (i :: Int))))
 
 
 filterInherits :: [Rec] -> PP ([(Rec,Rec)],[Rec])
@@ -229,7 +232,7 @@ filterInherits rs = do (a,b,_) <- foldM f ([],[],[]) rs
           supDefined s = find (\x -> getCons s == dTCons x)
 
 
-overload :: [(Id, Scheme, Expr)] -> PP ([Binding], ClassEnv)
+overload :: [Expl] -> PP ([Binding], ClassEnv)
 overload bs = do
     let groups = groupExpl bs
         (under,over) = split ((1 ==) . length) groups

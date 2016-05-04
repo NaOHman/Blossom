@@ -1,8 +1,8 @@
-module Types.Utils where
+module Language.Utils where
 
-import Models.Types
-{-import .Blossom-}
-import Models.Program
+import Language.Types
+{-import LangDef.Blossom-}
+import Language.Program
 import Data.List (intersect)
 import Data.Maybe (isJust)
 import Control.Monad (msum, liftM2)
@@ -197,3 +197,9 @@ instance Data Rec where
             ft = if null ts then t else ts `mkFun` t
                 
         in [(n, quantQual q ft)]
+
+func :: Type -> Type -> Type
+a `func` b = TAp (TAp tArrow a) b
+
+mkFun :: [Type] -> Type -> Type
+mkFun ts t = foldr func t ts

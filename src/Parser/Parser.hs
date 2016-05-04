@@ -1,10 +1,12 @@
 module Parser.Parser where
 
 import Parser.Core
-import LangDef.Blossom (mkFun)
+import PreProcessor.Bindings
+{-import LangDef.Blossom (mkFun)-}
 import Parser.Exprs
-import Types.Utils
-import Models.Program
+import Language.Utils
+import Language.Expressions
+import Language.Program
 import Parser.Types
 import Control.Monad.State (evalStateT)
 
@@ -38,8 +40,8 @@ gVar = try $ Bind <$> do
     sch <- opSufCons
     ex <- equals_ *> expr
     return $ case sch of
-        Just qt -> Expl (name, quantAll qt, ex)
-        _      -> Impl (name, ex)
+        Just qt -> Expl (name, quantAll qt, expr2Alt ex)
+        _      -> Impl (name, expr2Alt ex)
   
 
 fBind :: BParser Top
@@ -54,8 +56,8 @@ fDec = try $ do
       let lam = Abs (p, ex)
       return $ case mqt of
           Just (qs :=> t) -> let sch = quantUser ((q ++ qs) :=> t)
-                             in Expl (n, sch, lam)
-          Nothing -> Impl (n, lam)
+                             in Expl (n, sch, expr2Alt lam)
+          Nothing -> Impl (n, expr2Alt lam)
 
 adt :: BParser Top
 adt = try $ do
@@ -103,7 +105,7 @@ implem = try $ do
       impls <- block impl
       return $ Imp (Im q t bhvr impls)
 
-impl :: BParser (Id, Expr)
+impl :: BParser Impl
 impl =  do b <- fDec
            case b of 
                 Impl i -> return i

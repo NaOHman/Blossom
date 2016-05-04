@@ -1,9 +1,10 @@
-module Types.Inference where
+module Language.Inference where
 
-import Models.Types
-import LangDef.Blossom
-import Types.Utils
-import Models.Program
+import Language.Types
+import Language.Expressions
+{-import LangDef.Blossom-}
+import Language.Utils
+import Language.Program
 import PreProcessor.Bindings (splitImpl)
 import Data.List (union, intersect, partition, (\\))
 import Control.Monad (liftM, ap, zipWithM)

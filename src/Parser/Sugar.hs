@@ -1,9 +1,8 @@
-module LangDef.Sugar where
+module Parser.Sugar where
 
-import LangDef.Blossom
 import Parser.Core
 import Parser.Literals
-import Models.Expressions
+import Language.Expressions
 import Control.Monad (void)
 
 lArray :: BParser Expr -> BParser Expr

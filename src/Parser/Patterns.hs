@@ -1,8 +1,8 @@
 module Parser.Patterns (pat, pVar) where
 
 import Parser.Core
-import LangDef.Sugar
-import Models.Expressions
+import Parser.Sugar
+import Language.Expressions
 import Parser.Literals
 
 pat :: BParser Pat

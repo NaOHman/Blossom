@@ -1,8 +1,8 @@
 import Parser.Parser
 import PreProcessor.PreProcessor
 import PreProcessor.Bindings
-import Types.Inference
-import LangDef.Blossom
+import Language.Inference
+{-import LangDef.Blossom-}
 import Interpretor.Evaluator
 import Models.Program
 import qualified Data.Map as M
@@ -44,7 +44,7 @@ runBlossom file args dbg = do
             let bgs = map fixBG bg
                 (assumps,s) = tiProgram ce as bgs
             when (dbgTypeCheck dbg) (debugTypeCheck assumps)
-            let myBinds = map scrubBinds $ bs ++ apply s (flatten bg)
+            let myBinds = map toImpl $ bs ++ apply s (flatten bg)
             interpretBlossom myBinds args (dbgInterpret dbg)
 
 debugParser :: Program -> IO()

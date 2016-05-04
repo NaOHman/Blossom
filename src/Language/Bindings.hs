@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, NoMonomorphismRestriction, FlexibleContexts #-}
+-- {-# LANGUAGE GADTs, NoMonomorphismRestriction, FlexibleContexts #-}
 module Models.Expressions 
     ( module Models.Core
     , module Models.Types
@@ -19,8 +19,8 @@ import Models.Types
 import Data.List (intercalate)
 import Control.Arrow (second)
     
-type Expl = (Id, Scheme, Alt)
-type Impl = (Id, Alt)
+type Expl = (Id, Scheme, Expr)
+type Impl = (Id, Expr)
 
 type Alt = ([Pat], Expr)
 type BindGroup = ([Expl], [[Impl]])
@@ -44,11 +44,11 @@ data Expr = Lit Literal
           | Over Id Type [(Scheme, Expr)]
 
 instance Types Binding where
-    tv (Expl (_,_,(_,e))) = tv e
-    tv (Impl (_,(_,e))) = tv e
+    tv (Expl (_,_,e)) = tv e
+    tv (Impl (_,e)) = tv e
 
-    apply s (Expl (i,sc,(p,e))) = Expl (i,sc, (p, apply s e))
-    apply s (Impl (i,(p,e))) = Impl (i, (p, apply s e))
+    apply s (Expl (i,sc,e)) = Expl (i,sc, apply s e)
+    apply s (Impl (i,e)) = Impl (i, apply s e)
 
 instance Types Expr where
     tv (Abs (_,e)) = tv e

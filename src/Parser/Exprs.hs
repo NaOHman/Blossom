@@ -1,5 +1,3 @@
-{-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts, GADTs, TupleSections #-}
-
 module Parser.Exprs 
    ( expr
    , lambda
@@ -10,12 +8,13 @@ module Parser.Exprs
    ) where
 
 import Parser.Core
+import PreProcessor.Bindings
 import Parser.Patterns
-import LangDef.Sugar
+import Parser.Sugar
 import Data.Maybe
-import Models.Expressions
+import Language.Expressions
 import Parser.Literals
-import Types.Utils
+import Language.Utils
 import Parser.Types
 import Text.Megaparsec.Expr
 import Control.Monad.State
@@ -62,8 +61,8 @@ eLet = try $ do
            sch <- opSufCons 
            ex <- equals_ *> expr
            return $ case sch of
-              Just s -> Let [Expl (i, quantAll s, ex)] eUnit
-              _ -> Let [Impl (i, ex)] eUnit
+              Just s -> Let [Expl (i, quantAll s, expr2Alt ex)] eUnit
+              _ -> Let [Impl (i, expr2Alt ex)] eUnit
 
 eCase :: BParser Expr
 eCase = Case <$> header <*> inlineBlock branch

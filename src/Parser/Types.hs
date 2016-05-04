@@ -1,12 +1,10 @@
-{-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts, GADTs #-}
-
 module Parser.Types where
 
 import Parser.Core
-import Models.Expressions
-import Types.Utils
-import LangDef.Blossom
-import LangDef.Sugar
+import Language.Expressions
+import Language.Utils
+{-import LangDef.Blossom-}
+import Parser.Sugar
 
 --Qualifier parsing
 inlineQual :: BParser [Pred]

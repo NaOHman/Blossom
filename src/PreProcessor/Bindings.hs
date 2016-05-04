@@ -5,11 +5,12 @@ module PreProcessor.Bindings
     , bindExpr
     , bindName
     , flatten
-    , scrubBinds
+    , toImpl
+    , expr2Alt
     ) 
     where
 
-import Models.Program
+import Language.Expressions
 import Data.List ((\\), nub)
 import Data.Char (isLower)
 import Data.Graph hiding (scc)
@@ -37,8 +38,8 @@ depGroups ids bs =
     in map (map (nodeVal . mapping)) verts
         
 findDeps :: [Id] -> Binding -> (Binding, Id, [Id])
-findDeps ids b@(Impl(i,e)) = (b, i, userVars e \\ (i:ids)) 
-findDeps ids b@(Expl(i,_,e)) = (b, i, userVars e \\ (i:ids)) 
+findDeps ids b = let i = bindName b
+                 in (b, i, userVars (bindExpr b) \\ (i:ids))
 
 userVars :: Expr -> [Id]
 userVars (Var i@(c:_)) 
@@ -68,14 +69,19 @@ splitBinds = foldl f ([],[])
 bindName :: Binding -> Id
 bindName (Expl (i,_,_)) = i
 bindName (Impl (i,_)) = i
-    
-bindExpr :: Binding -> Expr
-bindExpr (Impl (_,e)) = e
-bindExpr (Expl (_,_,e)) = e
 
-scrubBinds :: Binding -> (Id, Expr)
-scrubBinds (Expl (i,_,e)) = (i,e)
-scrubBinds (Impl (i,e)) = (i,e)
+bindExpr :: Binding -> Expr
+bindExpr (Impl (_,(_,e))) = e
+bindExpr (Expl (_,_,(_,e))) = e
+
+toImpl :: Binding -> Impl
+toImpl (Impl t) = t
+toImpl (Expl (i,_,e)) = (i,e)
+
+expr2Alt :: Expr -> Alt
+expr2Alt (Abs a) = a
+expr2Alt e = ([], e)
+
 
 flatten :: [BindGroup] -> [Binding]
 flatten = concatMap flatten' 

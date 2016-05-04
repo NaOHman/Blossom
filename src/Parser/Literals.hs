@@ -1,9 +1,9 @@
-{-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts, GADTs #-}
+{-# LANGUAGE NoMonomorphismRestriction, FlexibleContexts #-}
 
 module Parser.Literals (literal, escapedChar) where
 
 import Parser.Core
-import Models.Expressions
+import Language.Expressions
 import qualified Text.Megaparsec.Lexer as L
 
 --------------------- Literal Parsers ---------------------------------

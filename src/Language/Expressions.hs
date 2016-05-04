@@ -1,7 +1,6 @@
-{-# LANGUAGE GADTs, NoMonomorphismRestriction, FlexibleContexts #-}
-module Models.Expressions 
+module Language.Expressions 
     ( module Models.Core
-    , module Models.Types
+    , module Language.Types
     , Expr (..) , Literal (..)
     , Pat (..)
     , Alt
@@ -11,11 +10,10 @@ module Models.Expressions
     , Class
     , BindGroup
     , Binding(..)
-    , Nameable(..)
     ) where
 
 import Models.Core
-import Models.Types
+import Language.Types
 import Data.List (intercalate)
 import Control.Arrow (second)
     
@@ -26,9 +24,6 @@ type Alt = ([Pat], Expr)
 type BindGroup = ([Expl], [[Impl]])
 type Stub = (Id, Scheme, [(Scheme, Expr)])
 type Class = ([Id], [Inst], [Stub])
-
-class Nameable a where
-    nameOf :: a -> Id
 
 data Binding = Expl Expl
              | Impl Impl
@@ -49,6 +44,7 @@ instance Types Binding where
 
     apply s (Expl (i,sc,(p,e))) = Expl (i,sc, (p, apply s e))
     apply s (Impl (i,(p,e))) = Impl (i, (p, apply s e))
+
 
 instance Types Expr where
     tv (Abs (_,e)) = tv e
