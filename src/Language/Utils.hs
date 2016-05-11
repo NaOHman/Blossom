@@ -2,6 +2,7 @@ module Language.Utils where
 
 import Language.Types
 import Language.Program
+import Language.Expressions
 import Data.List (intersect)
 import Data.Maybe (isJust)
 import Control.Monad (msum, liftM2)
@@ -9,12 +10,12 @@ import qualified Data.Map as M
 
 super :: ClassEnv -> Id -> [Id]
 super ce i = case M.lookup i ce of 
-    Just (is,_,_) -> is
+    Just (Class is _ _) -> is
     _ -> error "Super class not in class env"
 
 insts :: ClassEnv -> Id -> [Inst]
 insts ce i = case M.lookup i ce of 
-    Just (_,ins,_) -> ins
+    Just (Class _ ins _) -> map imInst ins
     _ -> error "Instance not in class env"
 
 defined :: Maybe a -> Bool
@@ -165,37 +166,19 @@ mkVar :: Id -> Kind -> Type
 mkVar n k = TVar $ Tyvar n k
 
 class Data d where
-    dQual ::  d -> [Pred]
-    dTCons :: d -> Tycon
-    dCstrs :: d -> [(Id, Scheme)]
-    dNames :: d -> [Id]
+    dName :: d -> Id
 
 instance Data Adt where
-    dQual = aqual
-    dTCons (Adt _ t _) = getCons t
-    dNames (Adt _ t cs) = let (Tycon n _) = getCons t
-                              cNames = map fst cs
-                          in n : cNames
-    dCstrs (Adt q t cs) = map toCstr cs
-         where toCstr (n,[]) = (n, quantQual q t)
-               toCstr (n,ts) = (n, quantQual q $ ts `mkFun` t)
+    dName (Adt (_:=>t) _) = let (Tycon n _) = getCons t
+                            in n 
+instance Data Rec where
+    dName (Rec (_:=>t) _ _) = let (Tycon n _) = getCons t
+                              in n 
 
 getCons :: Type -> Tycon
 getCons (TCons t) = t
 getCons (TAp t _) = getCons t
 getCons _ = error "getCons applied to something without a constructor"
-
-instance Data Rec where
-    dQual = rqual
-    dTCons (Rec _ t _ _)= getCons t
-    dNames (Rec _ t _ _)= let (Tycon n _) = getCons t
-                          in [n]
-    dCstrs (Rec q t _ fs) = 
-        let (Tycon n _) = getCons t
-            ts = map snd fs
-            ft = if null ts then t else ts `mkFun` t
-                
-        in [(n, quantQual q ft)]
 
 func :: Type -> Type -> Type
 a `func` b = TAp (TAp tArrow a) b

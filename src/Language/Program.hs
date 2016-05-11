@@ -6,8 +6,6 @@ module Language.Program
     , Program(..)
     , Rec(..)
     , Adt(..)
-    , Behavior(..)
-    , Implementation(..)
     , defClasses
     ) where
 
@@ -20,28 +18,19 @@ data Program = Program
     , pImpl :: [Implementation]
     , pAdt :: [Adt]
     , pRdt :: [Rec]
-    , pBvr :: [Behavior]
+    , pBvr :: [(Id,Class)]
     }
 
 data Adt = Adt 
-    { aqual   :: [Pred]
-    , atycon :: Type
-    , acnstrs :: [(Id, [Type])]
+    { aType :: Qual Type 
+    , acnstrs :: [Expl]
     } deriving Show
 
 data Rec = Rec 
-    { rqual :: [Pred] 
-    , rtycon :: Type
-    , sups :: [Type]
-    , rfields :: [(Id, Type)]
-    } deriving (Show, Eq)
-
--- Type is Id when stubs
-data Behavior = Bhvr [Pred] Type Id [(Id, Type)]
-    deriving Show
-
-data Implementation = Im [Pred] Type Id [Bind]
-    deriving Show
+    { rType :: Qual Type
+    , sups :: [Inst]
+    , rfields :: [Expl]
+    } deriving (Show)
 
 type ClassEnv = M.Map Id Class
 
@@ -55,7 +44,7 @@ defClasses = M.fromList $ map mkCls
     ,("Fractional", ["Num"], [tFloat])
     ,("Floating", ["Fractional"], [tFloat])]
 
-mkCls :: (Id, [Id], [Type]) -> (Id, ([Id], [Qual Pred], [Stub]))
-mkCls (i,ss,is) = (i, (ss, ints, stubs))
-    where ints = map (\t -> [] :=> IsIn i [t]) is
+mkCls :: (Id, [Id], [Type]) -> (Id, Class)
+mkCls (i,ss,is) = (i, Class ss ints stubs)
+    where ints = map (\t ->Im ([] :=> IsIn i [t]) []) is
           stubs = []

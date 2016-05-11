@@ -20,7 +20,7 @@ toBindGroup = reverse . map splitImpl . depGroups []
 splitImpl :: [Bind] -> BindGroup
 splitImpl bs =
             let (es, is) = splitBinds bs
-                eIds = map bindName es
+                eIds = map explName es
                 iBinds = depGroups eIds is
             in (es, iBinds)
 
@@ -56,7 +56,7 @@ userVars (Let bs e) = let ids = map bindName bs
                           es  = map bindExpr bs
                       in nub (userVars e ++ concatMap userVars es) \\ ids
 userVars (Case e bs) = nub $ userVars e ++ concatMap (\(p,e') ->  userVars e' \\ nub (pvar p)) bs
-userVars (Annot _ e) = userVars e
+userVars (Annot (e:-:_)) = userVars e
 userVars _ = []
 -- overloaded functions don't really count as user vars for our purposes
 
@@ -66,9 +66,9 @@ pvar (PAs v p) = v : pvar p
 pvar (PCons _ ps) = nub $ concatMap pvar ps
 pvar _ = []
                            
-splitBinds :: [Bind] -> ([Bind], [Bind])
+splitBinds :: [Bind] -> ([Expl], [Bind])
 splitBinds = foldl f ([],[]) 
-    where  f (es, is) e@(Bind _ (Annot _ _)) = (e:es,is) 
+    where  f (es, is) (Bind i (Annot a)) = (Expl i a:es,is) 
            f (es, is) i = (es,i:is)
 
 bindName :: Bind -> Id
@@ -79,4 +79,4 @@ bindExpr (Bind _ e) = e
 
 flatten :: [BindGroup] -> [Bind]
 flatten = concatMap flatten' 
-    where flatten' (es, is) =  es ++ (concat is)
+    where flatten' (es, is) =  map (\(Expl i (e:-:_)) -> Bind i e) es ++ concat is
