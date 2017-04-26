@@ -3,8 +3,8 @@ module PreProcessor.Bindings
     , splitBinds
     , splitImpl
     , bindExpr
-    , bindName
     , flatten
+    , explToBind
     ) 
     where
 
@@ -16,6 +16,9 @@ import Data.Graph.SCC
 
 toBindGroup :: [Bind] -> [BindGroup]
 toBindGroup = reverse . map splitImpl . depGroups []
+
+explToBind :: Expl -> Bind
+explToBind (Expl i (ex :-: _)) = Bind i ex
 
 splitImpl :: [Bind] -> BindGroup
 splitImpl bs =
@@ -71,8 +74,8 @@ splitBinds = foldl f ([],[])
     where  f (es, is) (Bind i (Annot a)) = (Expl i a:es,is) 
            f (es, is) i = (es,i:is)
 
-bindName :: Bind -> Id
-bindName (Bind i _) = i
+{-bindName :: Bind -> Id-}
+{-bindName (Bind i _) = i-}
 
 bindExpr :: Bind -> Expr
 bindExpr (Bind _ e) = e

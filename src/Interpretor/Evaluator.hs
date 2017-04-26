@@ -17,8 +17,9 @@ runProg bs _ =  do
     sc <- Scope <$> mapM eval' bs
     let (Just (VLambda _ mn)) = lookupScope "main" sc
     void $ eval (sc `add` defScope) mn
-    where eval' (Bind i (e@Over{})) = return $ (i, VOver e)
-          eval' (Bind i (Annot _ e@Over{})) = return $ (i, VOver e)
+    where 
+          {-eval' (Bind i (e@Over{})) = return $ (i, VOver e)-}
+          {-eval' (Bind i (Annot (e@Over{} :-: _))) = return $ (i, VOver e)-}
           eval' (Bind i@('$':_) (Abs ps e)) = return $ (i, VLambda ps e)
           eval' (Bind i ex) = eval defScope ex >>= \v -> return (i,v)
 
@@ -57,20 +58,20 @@ eval s (Case e cs) = do
                 _ -> pickCase v cs'
           pickCase _ _ = fail "Couldn't match pattern" --TODO Return a fail value
 
-eval s (Annot _ e) = eval s e
+eval s (Annot (e :-: _)) = eval s e
 
-eval sco o@(Over i tv' ps) = do
-    ex <- findMatch tv' ps
-    eval sco ex
-    where findMatch t ((sc,_):es) = 
-             let (_ :=> t') = freshInst sc
-             in case T.match t' t of
-                Nothing -> findMatch t es
-                Just _ -> return $ Var $ "$" ++ i ++ "#" ++ show sc 
-          findMatch _ _ = fail $ "Over failed to disambiguate" ++ show o
-          freshInst (Forall ks qt) = 
-            let ts = zipWith (\k n -> TVar $ Tyvar (show (n :: Int)) k) ks [0..]
-            in inst ts qt
+{-eval sco o@(Over i tv' ps) = do-}
+    {-ex <- findMatch tv' ps-}
+    {-eval sco ex-}
+    {-where findMatch t ((sc,_):es) = -}
+             {-let (_ :=> t') = freshInst sc-}
+             {-in case T.match t' t of-}
+                {-Nothing -> findMatch t es-}
+                {-Just _ -> return $ Var $ "$" ++ i ++ "#" ++ show sc -}
+          {-findMatch _ _ = fail $ "Over failed to disambiguate" ++ show o-}
+          {-freshInst (Forall ks qt) = -}
+            {-let ts = zipWith (\k n -> TVar $ Tyvar (show (n :: Int)) k) ks [0..]-}
+            {-in inst ts qt-}
 
 
 eval s (Ap e1 e2) = do

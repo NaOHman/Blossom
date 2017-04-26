@@ -23,11 +23,7 @@ import Language.Program
 import Parser.Types
 import Control.Monad.State (evalStateT)
 
-data Top = Bnd Bind
-         | Imp Implementation
-         | ADT Adt
-         | RDT Rec
-         | Bvr Behavior
+type TopParser = Program -> BParser Program
 
 parseBlossomFile :: FilePath -> IO (Either ParseError Program)
 parseBlossomFile = parseFromFile blossomParser
@@ -36,70 +32,64 @@ parseBlossomFile = parseFromFile blossomParser
 blossomParser :: Parsec String Program
 blossomParser = evalStateT blossom (0,1)
 
-top :: BParser Top
-top = nonIndented $ choice [gVar, fBind, behavior, implem, adt, rdt]
+top :: TopParser
+top prg = nonIndented $ choice $ map ($ prg) [gVar, fBind, behavior, implem, adt, rdt]
 
 blossom :: BParser Program
-blossom = splitTops <$> re []
-    where go prg = top >>= (\t -> return $ t : prg) >>= re
+blossom = re $ Program [] [] [] [] []
+    where go prg = top prg >>= re
           re prg = do done <- optional eof
                       case done of
                           Just _ -> return prg
                           _ -> go prg
  
-gVar :: BParser Top
-gVar = try $ Bnd <$> do 
-    name <- uName
-    sch <- opSufCons
-    ex <- equals_ *> expr
-    return $ case sch of
-        Just qt -> Bind name $ Annot (quantAll qt) ex
-        _      -> Bind name ex
-  
+gVar :: TopParser
+gVar prg = addBinding prg <$> eLet
 
-fBind :: BParser Top
-fBind = Bnd <$> fDec
+fBind :: TopParser
+fBind prg = addBinding prg <$> eLetRec
 
-fDec :: BParser Bind
-fDec = try $ do 
-      q <- try topQual
-      n <- fun_ *> lName
-      (p, mqt) <- args
-      ex <- exblock
-      let lam = Abs p ex
-      return $ case mqt of
-          Just (qs :=> t) -> let sch = quantUser ((q ++ qs) :=> t)
-                             in Bind n (Annot sch lam)
-          Nothing -> Bind n lam
+adt :: TopParser
+adt prg = try $ do
+    q <- constraint 
+    tcon <- data_ *> ptype <* where_
+    let qt = q :=> tcon
+    stubs <- block (adtStub q tcon)
+    return $ addAdt prg $ Adt qt stubs
 
-adt :: BParser Top
-adt = try $ do
-    q <- topQual 
-    tcon <- data_ *> vCons <* where_
-    stubs <- block ((,) <$> uName <*> opList (csl ptype))
-    return $ ADT $ Adt q tcon stubs
+adtStub :: [Pred] -> Type -> BParser (Annotated Id)
+adtStub quals t = do
+    constructorName <- uName
+    argTypes <- opList (csl ptype)
+    let constructorType = mkFun argTypes t
+        qualedType = quals :=> constructorType
+    return $ constructorName :-: qualedType
 
-rdt :: BParser Top
-rdt = try $ do 
-    q <- topQual 
-    t <- data_ *> vCons
-    sts <- opList (inherits_ *> sepBy1 vCons comma_) <* where_
-    fs <- block field
-    return $ RDT $ Rec q t sts fs
+rdt :: TopParser
+rdt prg = try $ do 
+    q <- constraint 
+    t <- data_ *> ptype
+    let qt = q :=> t
+    -- TODO generate instances
+    supNs <- opList (inherits_ *> sepBy1 ptype comma_) <* where_
+    let sups = map (\(TCons n _) -> q :=> (IsIn n [t])) supNs
+    fs <- block (field qt)
+    return $ addRecord prg $ Rec qt sups fs
 
-field :: BParser (Id, Type)
-field = do 
-    fname <- dot_  *> lName
-    t <- colon_ *> ptype
-    return ('_':fname, t)
+field :: Qual Type -> BParser (Annotated Id)
+field (quals :=> objType) = do 
+    fieldName <- dot_  *> lName
+    fieldType <- colon_ *> ptype
+    return $ ('_':fieldName) :-: (quals :=> (objType `func` fieldType))
 
-behavior :: BParser Top
-behavior = try $ do
-      q <- topQual
-      t <- vVar
+behavior :: TopParser
+behavior prg = try $ do
+      qs <- constraint
+      t <- ptype
+      let sups = map (\(IsIn n _) -> n) qs
       name <- is_ *> uName <* when_
       stubs <- block stub
-      return $ Bvr (Bhvr q t name stubs)
+      return $ addBehavior prg (name, Class sups [] (map fst stubs))
 
 stub :: BParser (Id, Type)
 stub = do 
@@ -110,18 +100,26 @@ stub = do
                   Just ts' -> ts' `mkFun` rt
                   Nothing -> rt)
 
-implem :: BParser Top
-implem = try $ do
-      q <- topQual
+implem :: TopParser
+implem prg = try $ do
+      q <- constraint
       t <- ptype
       bhvr <- is_ *> uName <* because_
-      impls <- block fDec
-      return $ Imp (Im q t bhvr impls)
+      let ins = q :=> (IsIn bhvr [t])
+      impls <- block eLetRec
+      return $ addImplementation prg (Im ins impls)
 
-splitTops :: [Top] -> Program
-splitTops = foldl split (Program [] [] [] [] [])
-    where split p (Bnd b) = p {pBind = b : pBind p}
-          split p (RDT  r) = p {pRdt   = r : pRdt p}
-          split p (ADT  a) = p {pAdt   = a : pAdt p}
-          split p (Bvr  b) = p {pBvr   = b : pBvr p}
-          split p (Imp  i) = p {pImpl  = i : pImpl p} 
+addBinding :: Program -> Expr -> Program
+addBinding p b = p {pBind = b : pBind p}
+
+addRecord :: Program -> Rec -> Program
+addRecord p r = p {pRdt   = r : pRdt p}
+
+addAdt :: Program -> Adt -> Program
+addAdt p a = p {pAdt   = a : pAdt p}
+
+addBehavior :: Program -> (Id, Class) -> Program
+addBehavior p b = p {pBvr   = b : pBvr p}
+
+addImplementation :: Program -> Implementation -> Program
+addImplementation p i = p {pImpl  = i : pImpl p} 

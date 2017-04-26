@@ -1,8 +1,8 @@
 import Parser.Parser
-import PreProcessor.PreProcessor
-import PreProcessor.Bindings
-import Language.Inference
-import Interpretor.Evaluator
+{-import PreProcessor.PreProcessor-}
+{-import PreProcessor.Bindings-}
+{-import Language.Inference-}
+{-import Interpretor.Evaluator-}
 import Language.Program
 import Language.Expressions
 {-import qualified Data.Map as M-}
@@ -37,15 +37,16 @@ runBlossom file args dbg = do
             exitFailure  
         Right prg -> do
             when (dbgParser dbg) (debugParser prg)
-            let (ce', as', bg, bs) = validate prg
-                ce = ce' -- `M.union` classes -- TODO Push into PreProcessor logic
-                as = as' -- ++ blossomAssumps
-            when (dbgPreProc dbg) (debugPreProc ce as bg bs)
+            {-let (ce', as', bg, bs) = validate prg-}
+                {-ce = ce' -- `M.union` classes -- TODO Push into PreProcessor logic-}
+                {-as = as' -- ++ blossomAssumps-}
+            putStrLn "Success!"
+            {-when (dbgPreProc dbg) (debugPreProc ce as bg bs)-}
             {-let bgs = map fixBG bg-}
-            let (assumps,s) = tiProgram ce as bg
-            when (dbgTypeCheck dbg) (debugTypeCheck assumps)
-            let myBinds = bs ++ apply s (flatten bg)
-            interpretBlossom myBinds args (dbgInterpret dbg)
+            {-let (assumps,s) = tiProgram ce as bg-}
+            {-when (dbgTypeCheck dbg) (debugTypeCheck assumps)-}
+            {-let myBinds = bs ++ apply s (flatten bg)-}
+            {-interpretBlossom myBinds args (dbgInterpret dbg)-}
 
 debugParser :: Program -> IO()
 debugParser (Program bs is as rs bhs) = do 
@@ -60,17 +61,17 @@ debugParser (Program bs is as rs bhs) = do
     putStrLn "BINDINGS:"
     mapM_ print bs
 
-debugPreProc :: ClassEnv -> [Assump] -> [BindGroup] -> [Bind] -> IO()
-debugPreProc ce as bg bs = do
-    putStrLn "_______PREPROC OUTPUT_____"
-    putStrLn "CLASSENV:"
-    print ce
-    putStrLn "ASSUMPS:"
-    mapM_ print as
-    putStrLn "BINDGROUP:"
-    mapM_ print bg
-    putStrLn "BINDINGS:"
-    mapM_ print bs
+{-debugPreProc :: ClassEnv -> [Assump] -> [BindGroup] -> [Bind] -> IO()-}
+{-debugPreProc ce as bg bs = do-}
+    {-putStrLn "_______PREPROC OUTPUT_____"-}
+    {-putStrLn "CLASSENV:"-}
+    {-print ce-}
+    {-putStrLn "ASSUMPS:"-}
+    {-mapM_ print as-}
+    {-putStrLn "BINDGROUP:"-}
+    {-mapM_ print bg-}
+    {-putStrLn "BINDINGS:"-}
+    {-mapM_ print bs-}
 
 debugTypeCheck :: [Assump] -> IO()
 debugTypeCheck as = do

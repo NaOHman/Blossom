@@ -14,7 +14,7 @@ import qualified Data.Map.Strict as M
 
 
 data Program = Program
-    { pBind :: [Bind]
+    { pBind :: [Expr]
     , pImpl :: [Implementation]
     , pAdt :: [Adt]
     , pRdt :: [Rec]
@@ -23,13 +23,13 @@ data Program = Program
 
 data Adt = Adt 
     { aType :: Qual Type 
-    , acnstrs :: [Expl]
+    , acnstrs :: [Annotated Id]
     } deriving Show
 
 data Rec = Rec 
     { rType :: Qual Type
     , sups :: [Inst]
-    , rfields :: [Expl]
+    , rfields :: [Annotated Id]
     } deriving (Show)
 
 type ClassEnv = M.Map Id Class

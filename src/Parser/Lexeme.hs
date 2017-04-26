@@ -27,16 +27,21 @@ module Parser.Lexeme
    , singleQuotes
    , doubleQuotes
    , brackets
+   , lAngle
+   , rAngle
    , angles
    , angles1
    , csl
    , opCsl
    , eol_
    , nonIndented
-   , escapedChar
+   , charChar
+   , stringChar
+   , C.digitChar
    ) where
 
 import Text.Megaparsec as X
+import Text.Megaparsec.Char as C
 import qualified Data.Foldable as F
 import Control.Monad.State
 import qualified Text.Megaparsec.Lexer as L
@@ -71,11 +76,15 @@ opList p = F.concat <$> optional p
 lexeme :: BParser a -> BParser a
 lexeme = L.lexeme sc
 
-escapedChar :: BParser Char
-escapedChar = char '\\' >> choice (zipWith escape codes reps) <?> "Bad escape code"
+charChar :: BParser Char
+charChar = escaped "ntr\\'" "\n\t\r\\'"  <|> noneOf "\n\t\r\\'"
+
+stringChar :: BParser Char
+stringChar = escaped "ntr\\\"" "\n\t\r\\\"" <|> noneOf "\n\t\r\\\""
+
+escaped :: String -> String -> BParser Char
+escaped codes replacements = char '\\' >> choice (zipWith escape codes replacements) <?> "Bad escape code"
     where escape c r = char c >> return r
-          codes = "ntr\\\"'" 
-          reps = "\n\t\r\\\"'" 
 
 sc :: BParser ()
 sc = L.space (void $ oneOf " \t") lineCmnt blockCmnt
@@ -112,11 +121,17 @@ doubleQuotes = between (char '"') (char '"')
 brackets :: BParser a -> BParser a
 brackets = between (symbol "[") (symbol "]")
 
+lAngle :: BParser() 
+lAngle = void $ symbol "<"
+
+rAngle :: BParser() 
+rAngle = void $ symbol ">"
+
 angles :: BParser a -> BParser [a]
-angles p = between (symbol "<") (symbol ">") (sepBy p (symbol ","))
+angles p = between lAngle rAngle (sepBy p (symbol ","))
 
 angles1 :: BParser a -> BParser [a]
-angles1 p = between (symbol "<") (symbol ">") (sepBy1 p (symbol ","))
+angles1 p = between lAngle rAngle (sepBy1 p (symbol ","))
 
 csl :: BParser a -> BParser [a]
 csl p = parens (sepBy p (symbol ","))
@@ -132,10 +147,9 @@ block item = do
     oldlvl <- getIndent
     indentSC
     newlvl <- getIndent
-    if newlvl > oldlvl then
-        indentedItems oldlvl newlvl item
-    else 
-        fail $ "Not indented old " ++ show oldlvl ++ " new " ++ show newlvl
+    if newlvl > oldlvl 
+        then indentedItems oldlvl newlvl item
+        else fail $ "Not indented old " ++ show oldlvl ++ " new " ++ show newlvl
 
 indentedItems :: Int -> Int -> BParser a -> BParser [a]
 indentedItems ref lvl p = re lvl

@@ -4,7 +4,6 @@ module Language.Types
     , Kind(..)
     , Type(..)
     , Tyvar(..)
-    , Tycon(..)
     , Qual(..)
     , Pred(..)
     , Scheme(..)
@@ -32,8 +31,8 @@ import Data.Maybe (fromMaybe)
 
 type Subst = [(Tyvar, Type)]
 
-data Type = TVar Tyvar 
-          | TCons Tycon
+data Type = TVar Id Kind 
+          | TCons Id Kind
           | TAp Type Type
           | TGen Int
     deriving Eq
@@ -43,9 +42,6 @@ data Kind = Star | KFun Kind Kind
 
 data Tyvar = Tyvar Id Kind
     deriving Eq
-
-data Tycon = Tycon Id Kind
-    deriving (Eq, Show)
 
 data Qual t = [Pred] :=> t
     deriving (Eq, Show)
@@ -69,11 +65,11 @@ class Types t where
     tv :: t -> [Tyvar]
 
 instance Types Type where
-    apply s (TVar u) = fromMaybe (TVar u) (lookup u s)
+    apply s (TVar n k) = fromMaybe (TVar n k) (lookup (Tyvar n k) s)
     apply s (TAp l r) = TAp (apply s l) (apply s r)
     apply _ t = t
 
-    tv (TVar u) = [u]
+    tv (TVar n k) = [Tyvar n k]
     tv (TAp l r) = tv l `union` tv r
     tv _ = []
 
@@ -100,12 +96,10 @@ instance Types Assump where
 instance HasKind Tyvar where
     kind (Tyvar _ k) = k
  
-instance HasKind Tycon where
-    kind (Tycon _ k) = k
 
 instance HasKind Type where
-    kind (TVar v) = kind v
-    kind (TCons tc) = kind tc
+    kind (TVar _ k) = k
+    kind (TCons _ k) = k
     kind (TAp t _)  = case kind t of
                            (KFun _ k) -> k
                            _ -> error "Bad function application"
@@ -127,13 +121,13 @@ instance Show Kind where
     show (KFun k1 k2) = show k1 ++ " -> " ++ show k2
 
 instance Show Type where
-    show (TAp (TAp (TCons (Tycon "->" _)) t1) t2) = 
-        show t1 ++ " -> " ++ show t2
+    show (TAp (TAp (TCons "->" _) t1) t2) = 
+        "(" ++ show t1 ++ " -> " ++ show t2 ++ ")"
     show (TAp t1 t2) = let (i,ts) = bottom t1 [t2]
                        in i ++ "<" ++ intercalate "," (map show ts) ++ ">"
 
-    show (TCons (Tycon i _ )) = i
-    show (TVar (Tyvar i _)) = i
+    show (TCons n _ ) = n
+    show (TVar n _) = n
     show (TGen i) = "G" ++ show i
 
 instance Show Tyvar where
@@ -159,28 +153,28 @@ bottom (TAp t1 t2) ts = bottom t1 (t2:ts)
 bottom t ts = (show t, ts)
  
 tChar :: Type
-tChar = tcons "Char" Star
+tChar = TCons "Char" Star
 
 tArrow :: Type
-tArrow = TCons $ Tycon "->" (KFun Star (KFun Star Star))
+tArrow = TCons "->" (KFun Star (KFun Star Star))
 
 tInt :: Type
-tInt = tcons "Int" Star
+tInt = TCons "Int" Star
 
 tFloat :: Type
-tFloat = tcons "Float" Star
+tFloat = TCons "Float" Star
 
 tBool :: Type
-tBool = tcons "Bool" Star
+tBool = TCons "Bool" Star
 
 tNull :: Type
-tNull = tcons "Null" Star
+tNull = TCons "Null" Star
 
 tUnit :: Type
-tUnit = tcons "()" Star
+tUnit = TCons "()" Star
 
 tList :: Type -> Type
-tList = TAp (tcons "List" (KFun Star Star))
+tList = TAp (TCons "List" (KFun Star Star))
 
 tString :: Type
 tString = tList tChar
@@ -188,15 +182,12 @@ tString = tList tChar
 tplName :: Int -> String 
 tplName n = "(" ++ replicate (n-1) ',' ++ ")"
 
-tcons :: Id -> Kind -> Type
-tcons n k = TCons $ Tycon n k
-
 tTuple :: [Type] -> Type
 tTuple ts = 
     let len = length ts
         name = tplName len 
         ks = kAry len
-        tc = tcons name ks
+        tc = TCons name ks
     in foldl TAp tc ts
 
 kAry :: Int -> Kind

@@ -22,21 +22,31 @@ import qualified Text.Megaparsec.Lexer as L
 
 --------------------- Literal Parsers ---------------------------------
 literal :: BParser Literal
-literal = lexeme $ try lFloat <|> lInt <|> lChar <|> lNull <|> try lBool
+literal = lexeme $ choice [lFloat, lInt, lChar, lNull, lBool]
 
 lFloat :: BParser Literal
-lFloat = LFloat <$> (try sufflt <|> flt)
-    where flt    = L.float
-          sufflt = fromIntegral <$> L.integer <* char 'f'
+lFloat = LFloat <$> negatable (choice [suffix, decimalFirst, L.float])
+    where suffix = try (fromIntegral <$> L.integer <* char 'f')
+          decimalFirst = do
+            text <- dot_ *> some digitChar
+            return $ read $ "0." ++ text
 
 lInt :: BParser Literal
-lInt = LInt <$> L.integer
+lInt = LInt <$> negatable L.integer
 
 lChar :: BParser Literal
-lChar = LChar <$> singleQuotes (escapedChar <|> noneOf "'\\\n\t\r")
+lChar = LChar <$> singleQuotes charChar
 
 lBool :: BParser Literal
-lBool = try (LBool True <$ true_) <|> try (LBool False <$ false_)
+lBool = LBool True <$ true_ <|> LBool False <$ false_
 
 lNull :: BParser Literal
 lNull = LNull <$ symbol "?"
+
+negatable :: Num a => BParser a -> BParser a
+negatable parser = try $ do 
+    doNegate <- optional minus_
+    num <- parser
+    case doNegate of
+        Just _ -> return $ negate num
+        _ -> return num

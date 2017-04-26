@@ -38,16 +38,16 @@ merge :: Monad m => Subst -> Subst -> m Subst
 merge s1 s2 = if agree 
                 then return (s1 ++ s2) else fail "merge failed"
     where agree = all p (map fst s1 `intersect` map fst s2)
-          p v = apply s1 (TVar v) == apply s2 (TVar v)
+          p (Tyvar n k) = apply s1 (TVar n k) == apply s2 (TVar n k)
 
 mgu :: (Monad m, Show a) => a -> Type -> Type -> m Subst
 mgu a (TAp l r) (TAp l' r') = do
     s1 <- mgu a l l'
     s2 <- mgu a (apply s1 r) (apply s1 r') 
     return (s2 @@ s1)
-mgu a (TVar u) t = varBind a u t
-mgu a t (TVar u) = varBind a u t
-mgu _ (TCons t1) (TCons t2) 
+mgu a (TVar n k) t = varBind a (Tyvar n k) t
+mgu a t (TVar n k) = varBind a (Tyvar n k) t
+mgu _ t1@(TCons _ _) t2@(TCons _ _) 
     | t1 == t2 = return nullSubst
 mgu e a b = fail $  "Types could not be unified " ++ show a ++ ", "++ show b ++ " In expresssion: " ++ show e
 
@@ -55,15 +55,15 @@ mguPred :: Monad m => Pred -> Pred -> m Subst
 mguPred = liftPred (mgu "Pred")
 
 varBind :: (Monad m, Show a) => a -> Tyvar -> Type -> m Subst
-varBind a u@(Tyvar i _) t | t == TVar u = return nullSubst
-            | u `elem` tv t = fail $ i ++ " Occurs check failed" ++ show a
-            | kind u /= kind t = fail $ "Kinds do not match " ++ show u ++ " " ++ show t ++ " " ++ show a
+varBind a u@(Tyvar n k) t | t == TVar n k = return nullSubst
+            | u `elem` tv t = fail $ n ++ " Occurs check failed" ++ show a
+            | k /= kind t = fail $ "Kinds do not match " ++ n ++ " " ++ show t ++ " " ++ show a
             | otherwise = return (u +-> t)
 
 match :: Monad m => Type -> Type -> m Subst
 match (TAp l r) (TAp l' r') = (match l l' >>= merge) =<< match r r'
-match (TVar u) t | kind u == kind t = return (u +-> t)
-match (TCons tc1) (TCons tc2)
+match (TVar n k) t | k == kind t = return (Tyvar n k +-> t)
+match tc1@(TCons _ _) tc2@(TCons _ _)
     | tc1 == tc2 = return nullSubst
 match t1 t2 = fail $ "Types do not match " ++ show t1 ++ ", " ++ show t2
 
@@ -115,8 +115,8 @@ scEntail ce ps p = any (p `elem`) (map (bySuper ce) ps)
 --context reduction garbage
 isInHnf :: Pred -> Bool
 isInHnf (IsIn _ ts) = all hnf ts
-    where hnf (TVar _) = True
-          hnf (TCons _) = False
+    where hnf (TVar _ _) = True
+          hnf (TCons _ _) = False
           hnf (TAp t _) = hnf t
           hnf _ = error "Generic Types have no HNF"
 
@@ -159,26 +159,18 @@ mkQualFn qts qt = foldr qualFn qt qts
 qualFn :: Qual Type -> Qual Type -> Qual Type
 qualFn (q1 :=> t1) (q2 :=> t2) = (q1 ++ q2) :=> (t1 `func` t2)
 
-mkCons :: Id -> Kind -> Type
-mkCons n k = TCons $ Tycon n k
-
-mkVar :: Id -> Kind -> Type
-mkVar n k = TVar $ Tyvar n k
-
 class Data d where
     dName :: d -> Id
 
 instance Data Adt where
-    dName (Adt (_:=>t) _) = let (Tycon n _) = getCons t
-                            in n 
+    dName (Adt (_:=>t) _) = getTName t
 instance Data Rec where
-    dName (Rec (_:=>t) _ _) = let (Tycon n _) = getCons t
-                              in n 
+    dName (Rec (_:=>t) _ _) = getTName t
 
-getCons :: Type -> Tycon
-getCons (TCons t) = t
-getCons (TAp t _) = getCons t
-getCons _ = error "getCons applied to something without a constructor"
+getTName :: Type -> Id
+getTName (TCons n _) = n
+getTName (TAp t _) = getTName t
+getTName _ = error "getTName applied to something without a constructor"
 
 func :: Type -> Type -> Type
 a `func` b = TAp (TAp tArrow a) b

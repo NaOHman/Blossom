@@ -15,6 +15,7 @@ module PreProcessor.PP
     , putTV
     , putAS
     , putCE
+    , runPP
     , freshInst
     , newTVar
     , requireSupers
@@ -29,6 +30,10 @@ import qualified Data.Map.Strict as M
 import Data.List (sort)
 
 type PP a = State (Int,ClassEnv,[Assump]) a
+
+runPP :: PP a -> ClassEnv -> [Assump] -> (ClassEnv, [Assump], a)
+runPP p ce as= let (x, (_, cx, ax)) = runState p (0, ce, as)
+               in (cx, ax, x)
 
 whenDef :: Id -> (Class -> PP a) -> PP a
 whenDef i f = getCE >>= \ce -> case M.lookup i ce of
@@ -48,9 +53,9 @@ addImp i@(Im (qs:=>IsIn sup _) bs) = do
             fail "Must implement all the stubs"
         modifyCE (M.insert sup (Class ss (i:is) sbs)))
  
-fullImpl :: [Id] -> [Expl] -> Bool
+fullImpl :: [Id] -> [Bind] -> Bool
 fullImpl ss bs = 
-    let sns = map explName bs
+    let sns = map bindName bs
     in sort ss == sort sns
     
 addClass :: Id -> Class -> PP ()

@@ -28,9 +28,13 @@ lArray p = toList <$> brackets (sepBy p comma_)
     {-return (head:tail)-}
 
 lString :: BParser Expr
-lString = toList <$> doubleQuotes (many stringChar)
-    where stringChar = Lit . LChar <$> (escapedChar <|> noneOf "\"\\\n\t\r")
+lString = toList <$> map Lit <$> stringChars
 
+pString :: BParser Pat
+pString = toPatList <$> map PLit <$> stringChars
+
+stringChars :: BParser [Literal]
+stringChars = doubleQuotes (many (LChar <$> stringChar))
 
 -- Parses a Tuple literal 
 eTup :: BParser Expr -> BParser Expr
@@ -40,7 +44,7 @@ tTup :: BParser Type -> BParser Type
 tTup = tup (const tTuple)
 
 pTup :: BParser Pat -> BParser Pat
-pTup = tup PCons
+pTup p = try $ tup PCons p
 
 tup :: (Id -> [a] -> a) -> BParser a -> BParser a
 tup f p = parens $ do 
@@ -56,6 +60,10 @@ list nil cns p = try (nilList nil) <|> list' nil cns p
 toList :: [Expr] -> Expr
 toList = foldr cons (Var "[nil]") 
     where cons e = Ap (Ap (Var "[cons]") e )
+
+toPatList :: [Pat] -> Pat
+toPatList = foldr cons (PCons "[nil]" [])
+    where cons p1 p2 = PCons "[cons]" [p1, p2]
 
 eList :: BParser Expr -> BParser Expr
 eList = list nil cns

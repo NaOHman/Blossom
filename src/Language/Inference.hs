@@ -62,12 +62,12 @@ tiExpr ce as (Case e bs) = do
     unify err bt (te `func` rt)
     return (ps ++ qs, rt) 
 
-tiExpr _ as (Over i v _) = do
-    sc <- find i as
-    (ps :=> t) <- freshInst sc
-    unify "Overloaded variable" v t
-    return (ps,t)
-tiExpr _ _ (Annot _ _) = undefined
+{-tiExpr _ as (Over i v _) = do-}
+    {-sc <- find i as-}
+    {-(ps :=> t) <- freshInst sc-}
+    {-unify "Overloaded variable" v t-}
+    {-return (ps,t)-}
+tiExpr _ _ (Annot _) = undefined
 
 tiExprs :: Infer [Expr] [Type]
 tiExprs ce as ts = do res <- mapM (tiExpr ce as) ts
@@ -153,8 +153,8 @@ defaultedPreds  = withDefaults (\vps _ -> concatMap snd vps)
 ambiguities :: [Tyvar] -> [Pred] -> [Ambiguity]
 ambiguities vs ps = [(v, filter(elem v . tv) ps) | v <- tv ps \\ vs ]
 
-tiExpl :: ClassEnv -> [Assump] -> Bind -> TI [Pred]
-tiExpl ce as (Bind _ (Annot sc ex)) = do 
+tiExpl :: ClassEnv -> [Assump] -> Expl -> TI [Pred]
+tiExpl ce as (Expl _ (ex :-: sc)) = do 
     (qs :=> t) <- freshInst sc
     ps         <- tiAlt ce as t (toAlt ex)
     s          <- getSubst
@@ -171,7 +171,6 @@ tiExpl ce as (Bind _ (Annot sc ex)) = do
         fail "context too weak"
       else
         return ds
-tiExpl _ _ _ = fail "something is horribly wrong" 
 
 restricted :: [Bind] -> Bool
 restricted = any simple 
@@ -204,7 +203,7 @@ tiImpls ce as bs = do
 
 tiBindGroup :: Infer BindGroup [Assump]
 tiBindGroup ce as (es,iss) = do 
-    let as' = [ v:>:sc | (Bind v (Annot sc _)) <- es ]
+    let as' = [ v:>:sc | (Expl v (_:-: sc)) <- es ]
     (ps, as'') <- tiSeq tiImpls ce (as'++as) iss
     qss        <- mapM (tiExpl ce (as''++as'++as)) es
     return (ps++concat qss, as''++as')

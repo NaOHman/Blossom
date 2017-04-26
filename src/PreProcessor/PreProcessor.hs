@@ -1,5 +1,3 @@
-{-# LANGUAGE TupleSections #-}
-
 module PreProcessor.PreProcessor 
     ( validate
     ) where
@@ -16,17 +14,28 @@ import Data.List (partition)
 {-import Data.Maybe (isJust)-}
 import GHC.Exts (groupWith)
 
+-- Take a program and turn the component pieces into a 
+-- class environment, set of assumptions, a list of bindgroups
+-- and a list of bindings. It will force an error if it encounters
+-- any violations of the language spec.
 validate :: Program -> (ClassEnv, [Assump], [BindGroup], [Bind])
-validate = undefined . preprocess
-{-validate prg = evalState (preprocess prg) 0-}
+validate prg = let (ce, as, (bg, b)) = runPP (preprocess prg) M.empty []
+               in (ce, as, bg, b)
                           
 preprocess :: Program -> PP ([BindGroup], [Bind])
 preprocess (Program bnds imps adt rdt bvs) = do
+    -- Add user declared behaviors to the store
     mapM_ (uncurry addClass) bvs
+    -- Add user declared implementations to the store
     mapM_ addImp imps
+    -- Make implicit behaviors out of inheritance relationships
     promoteSupers rdt
+    -- Create implicit behavior implementations out of record types.
+    -- The unbound behaviors are stored for processing later
     ubs <- concat <$> mapM recImps rdt
+    -- Parse bindings from Algebraic Datatype constructors
     let adtBs = concatMap acnstrs adt
+    -- overload user bindings and record fields
     bs <- overload $ bnds ++ map expl2Annot ubs
     fail ""
     {-unless (uniq $ stubNames ce)-}
@@ -37,25 +46,33 @@ preprocess (Program bnds imps adt rdt bvs) = do
 
 expl2Annot :: Expl -> Bind
 expl2Annot = undefined
+
+-- Finds the super classes implied by a list of predicates
 supNames :: [Pred] -> [Id]
 supNames = map (\(IsIn i _) -> i)
 
+-- Takes a list of Record data types and promotes them 
+-- to super classes
 promoteSupers :: [Rec] -> PP ()
 promoteSupers rs = do 
     let sids = concatMap (map instName . sups) rs
         ss = filter ((`elem` sids) . dName) rs
     mapM_ promote ss
 
+-- Returns the name of the class a given instance belongs
+-- to
 instName :: Inst -> Id
 instName (_:=> IsIn i _) = i
 
+-- Takes a single record data type and turns it into a 
+-- class with stubs corresponding to the fields
 promote :: Rec -> PP ()
 promote r@(Rec (q:=>t) ss fs) = do 
     let mySups = map instName ss
     requireSupers mySups
-    let cname = "_" ++ dName r
+    let cname = mangleRecName $ dName r
         snames = map explName $ rfields r
-        im = Im (q :=> IsIn cname [t]) fs
+        im = Im (q :=> IsIn cname [t]) (map explToBind fs)
     addClass cname (Class mySups [im] snames)
     addImp im
  
@@ -70,9 +87,10 @@ bindPartial bs i@(qs:=>(IsIn sup _)) = do
     requireSupers (supNames qs)
     whenDef sup $ \(Class ss is sns) -> do
         let (b1, b2) = partition (\e -> explName e `elem` sns) bs
-        unless (fullImpl sns b1) $
+            b1' = map explToBind b1
+        unless (fullImpl sns b1') $
             fail "Records must include all fields of their super types"
-        let imp = Im i b1
+        let imp = Im i b1'
         modifyCE (M.insert sup (Class ss (imp:is) sns))  
         return b2
 
@@ -119,6 +137,9 @@ split :: (a -> Bool) -> [a] -> ([a], [a])
 split p = foldl f ([],[])
     where f (as,bs) x = if p x then (x:as,bs) else (as,x:bs)
 
+-- Mangles the name of record data type before it becomes a class
+mangleRecName :: Id -> Id
+mangleRecName = ('_':)
 {-emptySch :: Scheme-}
 {-emptySch = Forall [Star] ([] :=> TGen 0)-}
 

@@ -3,13 +3,10 @@ module Language.Expressions
     , module Language.Types
     , Expr (..) , Literal (..)
     , Pat (..)
-    , Expl(..)
     , Class(..)
-    , BindGroup
-    , Annotation(..)
     , Implementation(..)
     , Bind(..)
-    , explName
+    , Annotated(..)
     , imInst
     ) where
 
@@ -18,15 +15,12 @@ import Language.Types
 import Data.List (intercalate)
 import Control.Arrow (second)
     
-type BindGroup = ([Expl], [[Bind]])
-
-data Expl = Expl Id Annotation
+data Implementation = Im Inst [Expr]
     deriving Show
 
-data Implementation = Im Inst [Expl]
-    deriving Show
-
+-- todo change id to type?
 data Class = Class [Id] [Implementation] [Id]
+    deriving Show
 
 data Bind = Bind Id Expr
     deriving Show
@@ -35,33 +29,31 @@ data Expr = Lit Literal
           | Var  Id
           | Abs  [Pat] Expr
           | Ap   Expr Expr
-          | Let  [Bind] Expr
+          | Let Id Expr Expr
+          | LetRec Id Expr Expr
           | Case Expr [(Pat, Expr)]
-          | Annot Annotation
-          | Over Id Type [(Scheme, Expr)]
+          | Annot (Annotated Expr)
+    deriving Eq -- used for testing only
 
-data Annotation = Expr :-: Scheme
-    deriving Show
-
-instance Types Bind where
-    tv (Bind _ e) = tv e
-    apply s (Bind i e) = Bind i (apply s e)
+-- Quantification is defered until after parsing.
+data Annotated a = a :-: Qual Type
+    deriving (Show, Eq)
 
 instance Types Expr where
     tv (Abs _ e) = tv e
-    tv (Let bg e) = tv bg ++ tv e
+    tv (Let _ e1 e2) = tv e1 ++ tv e2
+    tv (LetRec _ e1 e2) = tv e1 ++ tv e2
     tv (Ap e1 e2) = tv e1 ++ tv e2
     tv (Case e as) = tv e ++ concatMap (tv . snd) as
-    tv (Annot (e:-:_)) = tv e 
-    tv (Over _ (TVar t) _) = [t] 
+    tv (Annot (e :-: _)) = tv e 
     tv _ = []
 
     apply s (Abs ps e) = Abs ps (apply s e)
-    apply s (Let bg e) = Let (apply s bg) (apply s e)
+    apply s (Let i e1 e2) = Let i (apply s e1) (apply s e2)
+    apply s (LetRec i e1 e2) = LetRec i (apply s e1) (apply s e2)
     apply s (Ap e1 e2) = Ap (apply s e1) (apply s e2)
     apply s (Case e as) = Case (apply s e) $ map (second (apply s)) as
-    apply s (Annot (e:-:sc)) = Annot (apply s e :-: sc)
-    apply s (Over i t e) = Over i (apply s t) e
+    apply s (Annot (e :-: sc)) = Annot (apply s e :-: sc)
     apply _ e = e
 
 
@@ -72,14 +64,15 @@ instance Show Expr where
     show (Ap e1 e2) = "(AP" ++ show e1 ++  " " ++ show e2 ++ ")"
     show (Case e as) =  "Case " ++ show e ++ " of" ++ concatMap show as
     show (Annot (e :-: s)) = show e ++ " : " ++ show s
-    show (Let bg ex) = show "Let " ++ show bg ++ " in " ++ show ex
-    show (Over i t os)   = show "Overload " ++ i ++ " :" ++ show t ++ ":" ++ concatMap (\(qt,e) -> "\n  " ++ show qt ++  " => " ++ show e) os
+    show (Let i e1 e2) = show "Let " ++ i ++ " = "++ show e1 ++ " in " ++ show e2
+    show (LetRec i e1 e2) = show "LetRec " ++ i ++ " = "++ show e1 ++ " in " ++ show e2
 
 data Literal = LChar Char
              | LInt    Integer
              | LFloat  Double
              | LBool  Bool
              | LNull
+    deriving Eq
 
 instance Show Literal where
     show (LChar  c) = show c
@@ -93,6 +86,7 @@ data Pat = PCons Id [Pat]
          | PLit  Literal
          | PVar  Id
          | PNil
+    deriving Eq
 
 instance Show Pat where
     show PNil     = "[_]"
@@ -119,11 +113,8 @@ instance Prod Expr where
 
 instance Prod Type where 
     prod [t] = t
-    prod ts = foldl TAp (TCons $ Tycon (prodName ts) ks) ts
+    prod ts = foldl TAp (TCons (prodName ts) ks) ts
         where ks =  foldr KFun Star (replicate (length ts) Star)
-
-explName :: Expl -> Id
-explName (Expl i _) = i
 
 imInst :: Implementation -> Inst
 imInst (Im i _) = i

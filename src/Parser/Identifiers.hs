@@ -15,9 +15,9 @@ parsers are necessary to avoid restricted word errors.
 
 module Parser.Identifiers 
    ( is_, because_, inherits_, given_, if_, elif_, then_, else_, when_, where_
-   , data_, case_, type_, of_, arrow_, equals_, comma_, dot_, colon_, fun_
+   , data_, case_, type_, of_, arrow_, equals_, comma_, dot_, colon_, fun_, minus_
    , true_, false_, curry_, send_, request_
-   , lName, aName, uName, rword
+   , lName, aName, uName, rword 
    ) where
 
 import Control.Monad (void)
@@ -89,6 +89,9 @@ comma_ = void $ symbol ","
 
 dot_ :: BParser ()
 dot_ = void $ symbol "."
+
+minus_ :: BParser ()
+minus_ = void $ symbol "-"
 
 colon_ :: BParser ()
 colon_ = void $ symbol ":"

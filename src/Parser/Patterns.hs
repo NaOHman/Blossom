@@ -19,13 +19,13 @@ import Language.Expressions
 import Parser.Literals
 
 pat :: BParser Pat
-pat  = try pAs <|> choice [pVar, pNil, pLit, pCons]
+pat  = try pAs <|> choice [pVar, pNil, pLit, pCons, parens pat]
 
 pCons :: BParser Pat
-pCons = (PCons <$> uName <*> opCsl pat) <|> pList pat <|> pTup pat
+pCons = (PCons <$> uName <*> opCsl pat) <|> pList pat <|> pTup pat <|> pString
 
 pAs :: BParser Pat
-pAs = try (PAs <$> (lName <* char '#') <*> pat)
+pAs = try (PAs <$> (lName <* char '#') <*> pCons)
 
 pVar :: BParser Pat
 pVar = PVar <$> lName

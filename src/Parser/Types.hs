@@ -11,69 +11,63 @@ Portability : portable
 This module defines a number of parsers which can be used to parse Blossom Types and qualifiers.
 -}
 
-module Parser.Types where
+module Parser.Types 
+    ( constraint
+    , typeAnnotation
+    , qualType
+    , ptype
+    )
+
+where
 
 import Parser.Core
+import Data.Char
 import Language.Expressions
 import Language.Utils
 import Parser.Sugar
 
---Qualifier parsing
-inlineQual :: BParser [Pred]
-inlineQual = opList (qual <* dot_)
-
-topQual :: BParser [Pred]
-topQual = opList (qual <* (dot_ <|> eol_))
-
-qual :: BParser [Pred]
-qual = given_ *> sepBy1 pred' comma_ 
+-- Given X is in Y, Z is in Y.
+constraint :: BParser [Pred]
+constraint = opList (given_ *> sepBy1 pred' comma_  <* dot_)
     where pred' = IsIn <$> uName <*> csl ptype
 
--- Optional Annotation Parsing
-opSufCons :: BParser (Maybe (Qual Type))
-opSufCons = optional sufCons
-
--- Mandatory Annotation Parsing
-sufCons :: BParser (Qual Type)
-sufCons = colon_ *> qualType
+-- Annotation Parsing, always optional
+typeAnnotation :: BParser (Maybe (Qual Type))
+typeAnnotation = optional (colon_ *> qualType)
 
 -- Inline Qualified type
 qualType :: BParser (Qual Type)
-qualType = (:=>) <$> inlineQual <*> ptype
+qualType = (:=>) <$> constraint <*> ptype
 
 -- Parses any kind of type
 ptype :: BParser Type
-ptype = choice [pcons, pvar, pfun]
+ptype = choice [pAp, pCons, pVar, pFun, sugar]
 
-genType :: BParser Id -> BParser Type -> (Id -> Kind -> Type) -> BParser Type
-genType n p c = do
-    name <- n
-    params <- opList (angles1 p)
+-- Parses a type application
+pAp :: BParser Type
+pAp = try $ do
+    name@(n:_) <- aName
+    params <- angles1 ptype
     let k = foldl (\s _ -> KFun Star s) Star params
-    return $ foldl TAp (c name k) params
+        tf = if isLower n 
+                then TVar name k
+                else TCons name k
+    return $ foldl TAp tf params
 
--- Parses a type that may be applied to other types
-pvar :: BParser Type
-pvar = genType lName ptype mkVar
+-- Parses a Type variable with Kind *
+pVar :: BParser Type
+pVar = TVar <$> lName <*> return Star
 
--- Parses a Type constructor that may be applied to other type
-pcons :: BParser Type
-pcons = genType uName ptype mkCons <|> sugar ptype
+-- Parses a Type constructor with Kind *
+pCons :: BParser Type
+pCons = TCons <$> uName <*> return Star
 
 -- Parses a function type
-pfun :: BParser Type
-pfun = mkFun <$> angles ptype <*> (arrow_ *> ptype) 
+pFun :: BParser Type
+pFun = mkFun <$> angles ptype <*> (arrow_ *> ptype) 
 
--- Variable with all variable parameters
-vVar :: BParser Type
-vVar = genType lName vVar mkVar
-
--- Constructor with all variable parameters
-vCons :: BParser Type
-vCons = genType uName vVar mkCons <|> sugar vVar
-
-sugar :: BParser Type -> BParser Type
-sugar p = try unit <|> lst <|> tuple
+sugar :: BParser Type
+sugar = try unit <|> lst <|> tuple
     where unit = symbol "()" >> return tUnit
-          lst = tList <$> brackets p
-          tuple = tTup p
+          lst = tList <$> brackets ptype
+          tuple = tTup ptype

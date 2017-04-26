@@ -13,9 +13,9 @@ This module defines a number of parsers which can be used to parse Blossom Expre
 
 module Parser.Exprs 
    ( expr
-   , lambda
-   , args
    , pat
+   , eLet
+   , eLetRec
    , exblock
    , quantUser
    ) where
@@ -31,14 +31,18 @@ import Parser.Types
 import Text.Megaparsec.Expr
 import Control.Monad.State
 
+-- A parser that parses an expression.
 expr :: BParser Expr
 expr = makeExprParser term operators <?> "expression"
 
+-- Parses a term. Basically any expression that isn't an operator application
 term :: BParser Expr
-term = choice [eAbs, eCase, eAp, eLet, eLit, terminating eVar, parens expr]
+term = choice [eAbs, eLetRec, eCase, annotationAllowed eAp, eLet, 
+               annotationAllowed eLit, annotationAllowed (terminating eVar),
+               annotationAllowed (parens expr)]
 
 terminating :: BParser a -> BParser a
-terminating p = try p <* notFollowedBy (char '.' <|> char '(')
+terminating parser = try parser <* notFollowedBy (char '.' <|> char '(')
 
 eLit :: BParser Expr
 eLit = Lit <$> literal <|> lString <|> eList expr <|> eTup expr
@@ -47,59 +51,64 @@ eVar :: BParser Expr
 eVar = Var <$> try aName
 
 -- lambdas with explicitly typed arguments are contained within annotations.
+-- TODO defer quantifying types?
 eAbs :: BParser Expr
 eAbs = do
-    ((ps, e), mt) <- lambda
-    return $ case mt of
-        Just sc  -> Annot (quantUser sc) (Abs ps e)
-        Nothing -> Abs ps e
-
-data ApDta = Field Id | RegAp [Expr]
+    (pats, maybeArgTypes) <- unzip <$> csl arg
+    maybeReturnType <- typeAnnotation <* arrow_
+    maybeType <- funcAnnot maybeArgTypes maybeReturnType
+    ex <- exblock
+    return $ maybeAnnotate (Abs pats ex) maybeType
+    where arg = (,) <$> pVar <*> typeAnnotation
 
 eAp :: BParser Expr
-eAp = try $ do 
-    h <- parens expr <|> eVar
-    tails <- some apdta
-    return $ foldl makeAp h tails
-    where makeAp ex (Field n) = Ap (Var $ '_':n) ex
-          makeAp ex (RegAp es) = foldl Ap ex es
+eAp = fieldAp <|> functionAp
 
-apdta :: BParser ApDta
-apdta = (Field <$> (dot_ *> lName)) <|> (RegAp <$> csl expr)
+fieldAp :: BParser Expr
+fieldAp = try $ do
+    object <- parens expr <|> eVar
+    myField <- dot_ *> lName
+    return $ Ap (fieldToVar myField) object
+    where fieldToVar f = Var $ '_':f
+
+functionAp :: BParser Expr
+functionAp = try $ do
+    function <- parens expr <|> eVar
+    myArgs <- csl expr
+    return $ foldl Ap function myArgs
 
 eLet :: BParser Expr
 eLet = try $ do 
-           i <- lName 
-           sch <- opSufCons 
-           ex <- equals_ *> expr
-           return $ case sch of
-              Just s -> Let [Bind i (Annot (quantAll s) ex)] eUnit
-              _ -> Let [Bind i ex] eUnit
+    varName <- lName 
+    maybeType <- typeAnnotation 
+    myExpr <- equals_ *> expr
+    return $ Let varName (maybeAnnotate myExpr maybeType) eUnit
+
+eLetRec :: BParser Expr
+eLetRec = try $ do 
+      qual <- try constraint
+      name <- fun_ *> lName
+      lambda <- eAbs
+      return $ case lambda of
+          Annot (ex :-: (qs:=>t)) -> Annot $ 
+                (LetRec name ex eUnit) :-: ((qual ++ qs):=>t)
+          ex -> LetRec name ex eUnit
+          --TODO fail on unbound qual
+
+maybeAnnotate :: Expr -> Maybe (Qual Type) -> Expr
+maybeAnnotate ex (Just qt) = Annot (ex :-: qt)
+maybeAnnotate ex _             = ex
 
 eCase :: BParser Expr
 eCase = Case <$> header <*> inlineBlock branch
     where header = case_ *> expr <* of_
           branch = do
-            p <- pat <* arrow_
-            ex <- exblock
-            return (p, ex)
+            pattern <- pat <* arrow_
+            expression <- exblock
+            return (pattern, expression)
    
-{-eAnnot :: BParser Expr-}
-{-eAnnot = Annot <$> expr <*> (quantAll <$> sufCons)-}
-
-lambda :: BParser (([Pat], Expr), Maybe (Qual Type))
-lambda = do (p, mt) <- args
-            ex <- exblock
-            return ((p,ex), mt)
-
-args :: BParser ([Pat], Maybe (Qual Type))
-args = do 
-    (as,qts) <- unzip <$> csl arg 
-    rt <- opSufCons <* arrow_
-    mt <- funcAnnot qts rt
-    let p = map PVar as
-    return (p, mt)
-    where arg = (,) <$> lName <*> opSufCons
+annotationAllowed :: BParser Expr -> BParser Expr
+annotationAllowed parser = maybeAnnotate <$> parser <*> typeAnnotation
 
 operators :: [[Operator (StateT (Int, Int) (Parsec String)) Expr]]
 operators = [
@@ -119,9 +128,10 @@ operators = [
 exblock ::  BParser Expr
 exblock = chain <$> inlineBlock expr
 
+-- TODO fix chains for LetRecs and annotations
 chain :: [Expr] -> Expr
 chain [e] = e 
-chain (Let bg (Lit LNull):es) = Let bg (chain es)
+chain (Let i ex (Lit LNull):es) = Let i ex (chain es)
 chain (e1:e2) = Ap (Ap (Var "!seq") e1) (chain e2)
 chain _ = error "Chain applied to an empty list"
 
@@ -145,7 +155,7 @@ funcAnnot ts (Just rt) = do
 newTVar :: Kind -> BParser Type
 newTVar k = do i <- getTV
                putTV (i+1)
-               return (TVar $ Tyvar ("!var" ++ show i) k)
+               return $ TVar ("!var" ++ show i) k
 
 toVars :: [Maybe (Qual Type)]  -> BParser [Qual Type]
 toVars [] = return []
