@@ -20,6 +20,7 @@ import Parser.Exprs
 import Language.Utils
 import Language.Expressions
 import Language.Program
+import Language.Bindings
 import Parser.Types
 import Control.Monad.State (evalStateT)
 
@@ -44,10 +45,10 @@ blossom = re $ Program [] [] [] [] []
                           _ -> go prg
  
 gVar :: TopParser
-gVar prg = addBinding prg <$> eLet
+gVar prg = addBinding prg <$> (eLet >>= (\(Let i e _) -> return $ ImpB $ Impl i e))
 
 fBind :: TopParser
-fBind prg = addBinding prg <$> eLetRec
+fBind prg = addBinding prg <$> (eLet >>= (\(LetRec i e _) -> return $ ImpB $ Impl i e))
 
 adt :: TopParser
 adt prg = try $ do
@@ -72,24 +73,23 @@ rdt prg = try $ do
     let qt = q :=> t
     -- TODO generate instances
     supNs <- opList (inherits_ *> sepBy1 ptype comma_) <* where_
-    let sups = map (\(TCons n _) -> q :=> (IsIn n [t])) supNs
-    fs <- block (field qt)
-    return $ addRecord prg $ Rec qt sups fs
+    let supers = map (\(TCons n _) -> q :=> IsIn n [t]) supNs
+    fs <- block field
+    return $ addRecord prg $ Rec qt supers fs
 
-field :: Qual Type -> BParser (Annotated Id)
-field (quals :=> objType) = do 
+field :: BParser (Type, Id)
+field = do 
     fieldName <- dot_  *> lName
     fieldType <- colon_ *> ptype
-    return $ ('_':fieldName) :-: (quals :=> (objType `func` fieldType))
+    return $ (fieldType, fieldName)
 
 behavior :: TopParser
 behavior prg = try $ do
       qs <- constraint
-      t <- ptype
-      let sups = map (\(IsIn n _) -> n) qs
+      let supers = map (\(IsIn n _) -> n) qs
       name <- is_ *> uName <* when_
       stubs <- block stub
-      return $ addBehavior prg (name, Class sups [] (map fst stubs))
+      return $ addBehavior prg (name, Class supers [] (map fst stubs))
 
 stub :: BParser (Id, Type)
 stub = do 
@@ -105,11 +105,11 @@ implem prg = try $ do
       q <- constraint
       t <- ptype
       bhvr <- is_ *> uName <* because_
-      let ins = q :=> (IsIn bhvr [t])
+      let ins = q :=> IsIn bhvr [t]
       impls <- block eLetRec
       return $ addImplementation prg (Im ins impls)
 
-addBinding :: Program -> Expr -> Program
+addBinding :: Program -> Binding -> Program
 addBinding p b = p {pBind = b : pBind p}
 
 addRecord :: Program -> Rec -> Program

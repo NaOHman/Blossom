@@ -1,8 +1,8 @@
 module Language.Utils where
 
 import Language.Types
-import Language.Program
 import Language.Expressions
+import Language.Program
 import Data.List (intersect)
 import Data.Maybe (isJust)
 import Control.Monad (msum, liftM2)
@@ -132,15 +132,6 @@ toHnf ce p | isInHnf p = return [p]
            
 quantQual :: [Pred] -> Type -> Scheme
 quantQual ps t = quantify (tv t) (ps :=> t)
-
-quantAll :: Qual Type -> Scheme
-quantAll t = quantify (tv t) t
-
-quantify :: [Tyvar] -> Qual Type -> Scheme
-quantify vs qt = Forall ks (apply s qt)
-    where vs' = [v | v <- tv qt , v `elem` vs]
-          ks = map kind vs'
-          s = zip vs' (map TGen [0..])
 
 toScheme :: Type -> Scheme
 toScheme t = Forall [] ([] :=> t)

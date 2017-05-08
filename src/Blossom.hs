@@ -59,7 +59,7 @@ debugParser (Program bs is as rs bhs) = do
     mapM_ print rs
     mapM_ print as
     putStrLn "BINDINGS:"
-    mapM_ print bs
+    {-mapM_ (putStrLn . prettyPrint) bs-}
 
 {-debugPreProc :: ClassEnv -> [Assump] -> [BindGroup] -> [Bind] -> IO()-}
 {-debugPreProc ce as bg bs = do-}

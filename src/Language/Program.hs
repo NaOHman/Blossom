@@ -4,17 +4,29 @@ module Language.Program
     ( ClassEnv
     -- , module X
     , Program(..)
+    , Implementation(..)
+    , imInst
     , Rec(..)
     , Adt(..)
+    , Class(..)
     , defClasses
     ) where
 
 import Language.Expressions as X
+import Language.Bindings as X
 import qualified Data.Map.Strict as M
 
+imInst :: Implementation -> Inst
+imInst (Im i _) = i
+
+data Implementation = Im Inst [Binding]
+    deriving Show
+
+data Class = Class [Id] [Implementation] [Id]
+    deriving Show
 
 data Program = Program
-    { pBind :: [Expr]
+    { pBind :: [Binding]
     , pImpl :: [Implementation]
     , pAdt :: [Adt]
     , pRdt :: [Rec]
@@ -29,7 +41,7 @@ data Adt = Adt
 data Rec = Rec 
     { rType :: Qual Type
     , sups :: [Inst]
-    , rfields :: [Annotated Id]
+    , rfields :: [(Type, Id)]
     } deriving (Show)
 
 type ClassEnv = M.Map Id Class

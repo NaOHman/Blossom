@@ -4,6 +4,7 @@ module PreProcessor.PreProcessor
 
 import Language.Types
 import PreProcessor.Bindings
+import Language.Bindings
 import PreProcessor.PP
 import Language.Utils hiding (find)
 import Language.Program
@@ -18,11 +19,11 @@ import GHC.Exts (groupWith)
 -- class environment, set of assumptions, a list of bindgroups
 -- and a list of bindings. It will force an error if it encounters
 -- any violations of the language spec.
-validate :: Program -> (ClassEnv, [Assump], [BindGroup], [Bind])
-validate prg = let (ce, as, (bg, b)) = runPP (preprocess prg) M.empty []
-               in (ce, as, bg, b)
+validate :: Program -> (ClassEnv, [Assump], [BindGroup])
+validate prg = let (ce, as, bg) = runPP (preprocess prg) M.empty []
+               in (ce, as, bg)
                           
-preprocess :: Program -> PP ([BindGroup], [Bind])
+preprocess :: Program -> PP ([BindGroup])
 preprocess (Program bnds imps adt rdt bvs) = do
     -- Add user declared behaviors to the store
     mapM_ (uncurry addClass) bvs
@@ -44,7 +45,7 @@ preprocess (Program bnds imps adt rdt bvs) = do
     {-bs' <- replaceOverVars stubs binds-}
     {-return (ce, assumps, toBindGroup bs', impBinds)-}
 
-expl2Annot :: Expl -> Bind
+expl2Annot :: Expl -> Binding
 expl2Annot = undefined
 
 -- Finds the super classes implied by a list of predicates
@@ -67,12 +68,12 @@ instName (_:=> IsIn i _) = i
 -- Takes a single record data type and turns it into a 
 -- class with stubs corresponding to the fields
 promote :: Rec -> PP ()
-promote r@(Rec (q:=>t) ss fs) = do 
-    let mySups = map instName ss
-    requireSupers mySups
+promote r@(Rec (qualifier:=>rtype) superClasses fields) = do 
+    let superNames = map instName superClasses
+    requireSupers superNames
     let cname = mangleRecName $ dName r
-        snames = map explName $ rfields r
-        im = Im (q :=> IsIn cname [t]) (map explToBind fs)
+        snames = map name $ rfields r
+        im = Im (qualifier :=> IsIn cname [rtype]) (map explToBind fields)
     addClass cname (Class mySups [im] snames)
     addImp im
  
@@ -113,7 +114,7 @@ uniq xs = uniq' xs []
           uniq' (y:ys) ls = y `notElem` ls && uniq' ys (y:ls)
 
 
-overload :: [Bind] -> PP [Bind]
+overload :: [Binding] -> PP [Binding]
 overload bs = do
     let groups = groupWith bindName bs
         (under,_) = split ((1 ==) . length) groups
@@ -124,10 +125,10 @@ overload bs = do
 behaviorNames :: ClassEnv -> [Id]
 behaviorNames = M.keys
 
-fullAp :: [Tycon] -> [Bind] -> PP ()
+fullAp :: [Type] -> [Binding] -> PP ()
 fullAp _ _ = return ()
 
-genMain :: [Bind] -> PP Expr
+genMain :: [Binding] -> PP Expr
 genMain bs = do
     let (m, bs') = split (("main" ==) . bindName) bs
     unless (length m == 1) (fail "Could not find main")
@@ -161,3 +162,15 @@ mangleRecName = ('_':)
     {-where bVars (p,e) = do e' <- rVars ss e-}
                            {-return (p, e')-}
 {-rVars _ e = return e-}
+
+-- Returns a list of bindings representing the implict functions created by a
+-- record type definition. Function Names are pre-mangled.
+fieldFunctions :: Rec -> [Expl]
+fieldFunctions rec = let recType = rType rec
+                     in map (fieldFunction recType) (rfields rec)
+
+fieldFunction :: Qual Type -> Annotated Id -> Expl
+fieldFunction (dataQual :=> dataType) (fieldType, fieldName) =
+    let funcType = dataType `func` fieldType
+        funcName = Var $ '!' : show dataType ++ "**" ++ show fieldName
+    in Expl fieldName (quantAll funcType) funcName 

@@ -3,11 +3,8 @@ module Language.Expressions
     , module Language.Types
     , Expr (..) , Literal (..)
     , Pat (..)
-    , Class(..)
-    , Implementation(..)
-    , Bind(..)
     , Annotated(..)
-    , imInst
+    , prettyPrint
     ) where
 
 import Language.Core
@@ -15,16 +12,6 @@ import Language.Types
 import Data.List (intercalate)
 import Control.Arrow (second)
     
-data Implementation = Im Inst [Expr]
-    deriving Show
-
--- todo change id to type?
-data Class = Class [Id] [Implementation] [Id]
-    deriving Show
-
-data Bind = Bind Id Expr
-    deriving Show
-
 data Expr = Lit Literal
           | Var  Id
           | Abs  [Pat] Expr
@@ -55,6 +42,30 @@ instance Types Expr where
     apply s (Case e as) = Case (apply s e) $ map (second (apply s)) as
     apply s (Annot (e :-: sc)) = Annot (apply s e :-: sc)
     apply _ e = e
+
+-- TODO move
+prettyPrint :: Expr -> String
+prettyPrint = prettyPrint' 0
+
+prettyPrint' :: Int -> Expr -> String
+prettyPrint' _ (Lit l) = show l
+prettyPrint' _ (Var v) = v
+prettyPrint' i (Let ix e1 e2) = ix ++ " = " ++ prettyPrint' (i+4) e1 ++ indent (i+2) ++ prettyPrint' (i+2) e2
+prettyPrint' i (LetRec ix e1 e2) = "func " ++ ix ++ " = " ++ prettyPrint' (i+4) e1 ++ indent (i+2) ++ prettyPrint' (i+2) e2 
+prettyPrint' i (Ap (Ap (Var "!seq") e1) e2) = prettyPrint' i e1 ++ ";" ++ indent i ++ prettyPrint' i e2 
+prettyPrint' _ e@(Ap (Ap (Var "[cons]") (Lit (LChar _))) _) = "\"" ++ prettyString e ++ "\""
+prettyPrint' i (Ap e1 e2) = prettyPrint' i e1 ++ "(" ++ prettyPrint' i e2 ++ ")" 
+prettyPrint' i (Annot (e :-: s)) = prettyPrint' i e ++ " : " ++ show s
+prettyPrint' i (Abs ps e) = show ps ++ " ->" ++ indent (i+2) ++ prettyPrint' (i+2) e
+prettyPrint' i (Case ps cs) = "Case " ++ show ps ++ " of " ++ concatMap (ppCase (i+2)) cs
+    where ppCase ind (p, e) = indent ind ++ show p ++ " -> " ++ prettyPrint' ind e
+
+prettyString :: Expr -> String
+prettyString (Ap (Ap (Var "[cons]") (Lit (LChar c))) e) = c : prettyString e
+prettyString _ = ""
+
+indent :: Int -> String
+indent i = '\n' : replicate i ' '
 
 
 instance Show Expr where
@@ -115,9 +126,6 @@ instance Prod Type where
     prod [t] = t
     prod ts = foldl TAp (TCons (prodName ts) ks) ts
         where ks =  foldr KFun Star (replicate (length ts) Star)
-
-imInst :: Implementation -> Inst
-imInst (Im i _) = i
 
 prodName :: [a] -> String
 prodName ls = show (length ls) ++ "PROD"

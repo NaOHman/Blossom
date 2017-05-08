@@ -8,7 +8,7 @@ Maintainer  : JeffreyTLyman@gmail.com
 Stability   : experimental
 Portability : portable
 
-This module defines a number of parsers which can be used to parse Blossom Types and qualifiers.
+This module defines a number of parsers which can be used to parse Blossom Types and Type Schemes.
 -}
 
 module Parser.Types 
@@ -26,24 +26,24 @@ import Language.Expressions
 import Language.Utils
 import Parser.Sugar
 
--- Given X is in Y, Z is in Y.
+-- | Parses a type constraint (a list of predicates). Ex: 'Given Eq(a), Show(a).'
 constraint :: BParser [Pred]
 constraint = opList (given_ *> sepBy1 pred' comma_  <* dot_)
     where pred' = IsIn <$> uName <*> csl ptype
 
--- Annotation Parsing, always optional
+-- | Parses a type annotation. Ex: ': Thing<a>'
 typeAnnotation :: BParser (Maybe (Qual Type))
 typeAnnotation = optional (colon_ *> qualType)
 
--- Inline Qualified type
+-- | Parses a qualified type. Ex: 'Given Eq(a). <a, a> -> Bool'
 qualType :: BParser (Qual Type)
 qualType = (:=>) <$> constraint <*> ptype
 
--- Parses any kind of type
+-- | Parses an unqualified type. Ex: 'List<a>'
 ptype :: BParser Type
 ptype = choice [pAp, pCons, pVar, pFun, sugar]
 
--- Parses a type application
+-- | Parses an applied type.
 pAp :: BParser Type
 pAp = try $ do
     name@(n:_) <- aName
@@ -54,18 +54,19 @@ pAp = try $ do
                 else TCons name k
     return $ foldl TAp tf params
 
--- Parses a Type variable with Kind *
+-- | Parses a type variable. The kind is assumed to be *.
 pVar :: BParser Type
 pVar = TVar <$> lName <*> return Star
 
--- Parses a Type constructor with Kind *
+-- | Parses a type constructor. The kind is assumed to be *
 pCons :: BParser Type
 pCons = TCons <$> uName <*> return Star
 
--- Parses a function type
+-- | Parses a function type. Ex: '<List<a>, a> -> Bool'
 pFun :: BParser Type
 pFun = mkFun <$> angles ptype <*> (arrow_ *> ptype) 
 
+-- | Parses sugary types, the Unit type, and the list type and 
 sugar :: BParser Type
 sugar = try unit <|> lst <|> tuple
     where unit = symbol "()" >> return tUnit

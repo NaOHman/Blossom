@@ -23,6 +23,7 @@ module PreProcessor.PP
     ) where
 
 import Language.Types
+import Language.Bindings
 import Language.Program
 import Language.Expressions
 import Control.Monad.State
@@ -53,9 +54,9 @@ addImp i@(Im (qs:=>IsIn sup _) bs) = do
             fail "Must implement all the stubs"
         modifyCE (M.insert sup (Class ss (i:is) sbs)))
  
-fullImpl :: [Id] -> [Bind] -> Bool
+fullImpl :: [Id] -> [Binding] -> Bool
 fullImpl ss bs = 
-    let sns = map bindName bs
+    let sns = map name bs
     in sort ss == sort sns
     
 addClass :: Id -> Class -> PP ()
@@ -80,7 +81,7 @@ newTVar :: Kind -> PP Type
 newTVar k = do i <- getTV 
                let v = "&var" ++ show i
                putTV (i + 1)
-               return $ TVar $ Tyvar v k
+               return $ TVar v k
 
 putTV :: Int -> PP ()
 putTV i = modifyTV (const i)

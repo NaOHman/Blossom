@@ -12,6 +12,8 @@ module Language.Types
     , HasKind(..)
     , Types(..)
     , Instantiate(..)
+    , quantAll
+    , quantify
     , tChar
     , tUnit
     , tInt
@@ -193,3 +195,13 @@ tTuple ts =
 kAry :: Int -> Kind
 kAry 0 = Star
 kAry n = KFun Star (kAry (n-1))
+
+quantAll :: Qual Type -> Scheme
+quantAll t = quantify (tv t) t
+
+quantify :: [Tyvar] -> Qual Type -> Scheme
+quantify vs qt = Forall ks (apply s qt)
+    where vs' = [v | v <- tv qt , v `elem` vs]
+          ks = map kind vs'
+          s = zip vs' (map TGen [0..])
+
