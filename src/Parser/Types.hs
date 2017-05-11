@@ -21,10 +21,8 @@ module Parser.Types
 where
 
 import Parser.Core
-import Data.Char
-import Language.Expressions
-import Language.Utils
-import Parser.Sugar
+import Parser.IR.Types
+{-import Parser.Sugar-}
 
 -- | Parses a type constraint (a list of predicates). Ex: 'Given Eq(a), Show(a).'
 constraint :: BParser [Pred]
@@ -32,43 +30,32 @@ constraint = opList (given_ *> sepBy1 pred' comma_  <* dot_)
     where pred' = IsIn <$> uName <*> csl ptype
 
 -- | Parses a type annotation. Ex: ': Thing<a>'
-typeAnnotation :: BParser (Maybe (Qual Type))
+typeAnnotation :: BParser (Maybe Type)
 typeAnnotation = optional (colon_ *> qualType)
 
 -- | Parses a qualified type. Ex: 'Given Eq(a). <a, a> -> Bool'
-qualType :: BParser (Qual Type)
-qualType = (:=>) <$> constraint <*> ptype
+qualType :: BParser Type
+qualType = Given <$> constraint <*> ptype
 
 -- | Parses an unqualified type. Ex: 'List<a>'
 ptype :: BParser Type
-ptype = choice [pAp, pCons, pVar, pFun, sugar]
+ptype = choice [pMono, pPoly, pFun, sugar]
 
--- | Parses an applied type.
-pAp :: BParser Type
-pAp = try $ do
-    name@(n:_) <- aName
-    params <- angles1 ptype
-    let k = foldl (\s _ -> KFun Star s) Star params
-        tf = if isLower n 
-                then TVar name k
-                else TCons name k
-    return $ foldl TAp tf params
+-- | Parses a Polymorphic type
+pPoly :: BParser Type
+pPoly = TPoly <$> aName <*> angles1 ptype
 
--- | Parses a type variable. The kind is assumed to be *.
-pVar :: BParser Type
-pVar = TVar <$> lName <*> return Star
-
--- | Parses a type constructor. The kind is assumed to be *
-pCons :: BParser Type
-pCons = TCons <$> uName <*> return Star
+-- | Parses a Monomorphic type
+pMono :: BParser Type
+pMono = TMono <$> lName
 
 -- | Parses a function type. Ex: '<List<a>, a> -> Bool'
 pFun :: BParser Type
-pFun = mkFun <$> angles ptype <*> (arrow_ *> ptype) 
+pFun = TFunc <$> angles ptype <*> (arrow_ *> ptype) 
 
 -- | Parses sugary types, the Unit type, and the list type and 
 sugar :: BParser Type
 sugar = try unit <|> lst <|> tuple
-    where unit = symbol "()" >> return tUnit
-          lst = tList <$> brackets ptype
-          tuple = tTup ptype
+    where unit = symbol "()" >> return TUnit
+          lst = TList <$> brackets ptype
+          tuple = TTuple <$> csl ptype

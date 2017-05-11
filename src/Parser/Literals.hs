@@ -17,12 +17,12 @@ This module parses parsers literals
 module Parser.Literals (literal) where
 
 import Parser.Core
-import Language.Expressions
+import Parser.IR.Literals
 import qualified Text.Megaparsec.Lexer as L
 
 --------------------- Literal Parsers ---------------------------------
 literal :: BParser Literal
-literal = lexeme $ choice [lFloat, lInt, lChar, lNull, lBool]
+literal = lexeme $ choice [lFloat, lInt, lChar, lNull, lBool, lString]
 
 lFloat :: BParser Literal
 lFloat = LFloat <$> negatable (choice [suffix, decimalFirst, L.float])
@@ -42,6 +42,9 @@ lBool = LBool True <$ true_ <|> LBool False <$ false_
 
 lNull :: BParser Literal
 lNull = LNull <$ symbol "?"
+
+lString :: BParser Literal
+lString = LString <$> doubleQuotes (many stringChar)
 
 negatable :: Num a => BParser a -> BParser a
 negatable parser = try $ do 

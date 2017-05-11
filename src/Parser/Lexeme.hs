@@ -27,6 +27,7 @@ module Parser.Lexeme
    , singleQuotes
    , doubleQuotes
    , brackets
+   , bracketList
    , lAngle
    , rAngle
    , angles
@@ -120,6 +121,9 @@ doubleQuotes = between (char '"') (char '"')
 
 brackets :: BParser a -> BParser a
 brackets = between (symbol "[") (symbol "]")
+
+bracketList :: BParser a -> BParser [a]
+bracketList p = brackets (sepBy p (symbol ","))
 
 lAngle :: BParser() 
 lAngle = void $ symbol "<"

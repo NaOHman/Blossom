@@ -14,15 +14,15 @@ This module contains parsers for Blossom Patterns.
 module Parser.Patterns (pat, pVar) where
 
 import Parser.Core
-import Parser.Sugar
-import Language.Expressions
+{-import Parser.Sugar-}
+import Parser.IR.Patterns
 import Parser.Literals
 
 pat :: BParser Pat
 pat  = try pAs <|> choice [pVar, pNil, pLit, pCons, parens pat]
 
 pCons :: BParser Pat
-pCons = (PCons <$> uName <*> opCsl pat) <|> pList pat <|> pTup pat <|> pString
+pCons = (PCons <$> uName <*> opCsl pat) -- <|> pList pat <|> pTup pat <|> pString
 
 pAs :: BParser Pat
 pAs = try (PAs <$> (lName <* char '#') <*> pCons)

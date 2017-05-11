@@ -16,7 +16,8 @@ patterns, and expressions.
 module Parser.Sugar where
 
 import Parser.Core
-import Language.Expressions
+import Parser.IR.Expressions
+import Parser.IR.Types
 import Control.Monad (void)
 
 lArray :: BParser Expr -> BParser Expr
@@ -46,7 +47,7 @@ tTup = tup (const tTuple)
 pTup :: BParser Pat -> BParser Pat
 pTup p = try $ tup PCons p
 
-tup :: (Id -> [a] -> a) -> BParser a -> BParser a
+tup :: (String -> [a] -> a) -> BParser a -> BParser a
 tup f p = parens $ do 
     h <- p <* comma_
     t <- sepBy1 p comma_
