@@ -30,8 +30,8 @@ constraint = opList (given_ *> sepBy1 pred' comma_  <* dot_)
     where pred' = IsIn <$> uName <*> csl ptype
 
 -- | Parses a type annotation. Ex: ': Thing<a>'
-typeAnnotation :: BParser (Maybe Type)
-typeAnnotation = optional (colon_ *> qualType)
+typeAnnotation :: BParser Type
+typeAnnotation = colon_ *> ptype
 
 -- | Parses a qualified type. Ex: 'Given Eq(a). <a, a> -> Bool'
 qualType :: BParser Type

@@ -15,18 +15,18 @@ module Parser.Exprs
    ( expr
    , pat
    , eLet
-   , eLetRec
+   , statement
+   , eFunc
    , exblock
-   , quantUser
-   , letBind
+   {-, quantUser-}
+   {-, letBind-}
    ) where
 
 import Parser.Core
 import Parser.Patterns
 {-import Parser.Sugar-}
-import Data.Maybe
 import Parser.IR.Expressions
-import Parser.IR.Types
+{-import Parser.IR.Types-}
 {-import Language.Bindings-}
 import Parser.Literals
 {-import Language.Utils-}
@@ -38,19 +38,46 @@ import Control.Monad.State
 expr :: BParser ParseExpr
 expr = makeExprParser term operators <?> "expression"
 
+statement :: BParser ParseExpr
+statement = eFunc <|> expr
+
 -- | Parses a term. Basically any expression that isn't an operator application
 term :: BParser ParseExpr
-term = choice [eAbs, eCase, annotationAllowed eAp, eLet, 
-               annotationAllowed eLit, annotationAllowed (terminating eVar),
-               annotationAllowed (parens expr)]
+term = choice blockExpressions <|> longestMatch
 
--- | Modifies a parser to reject incomplete expressions.
-terminating :: BParser a -> BParser a
-terminating parser = try parser <* notFollowedBy (char '.' <|> char '(')
+longestMatch :: BParser ParseExpr
+longestMatch = do
+    lhs <- choice $ terminalExpressions ++ 
+                    map parens blockExpressions ++
+                    [parens expr]
+    greedyParse lhs
+
+greedyParse :: ParseExpr -> BParser ParseExpr
+greedyParse lhs = (try continuation >>= greedyParse) <|> return lhs
+    where continuation = choice $ map ($ lhs) complexExpressions
+
+-- TODO(naohman) explain the rational for these different groups
+-- | Expressions which usually require and indentation block. They create a new
+-- scope, and require parentheses if used in a sub expression.
+blockExpressions :: [BParser ParseExpr]
+blockExpressions = [eAbs, eCase] 
+
+-- | Expressions that do not conatain sub expressions.
+terminalExpressions :: [BParser ParseExpr]
+terminalExpressions = [eLit, eLet, eVar, eList, eTup]
+
+-- | Expressions that require sub expressions. Each of these parsers takes a
+-- left hand expression and returns a parser which can parse the full
+-- expression. For instance the function call `max(myList)` is composed of 2
+-- sub expressions, the variable `max`  and the variable `myList` the variable
+-- max will have already been parsed and it will be passed to the funtcion call
+-- parser which will combine the variable max with the argument myList
+complexExpressions :: [ParseExpr -> BParser ParseExpr]
+complexExpressions = [functionCall, annotation, fieldAccess]
 
 -- | Parse a literal ParseExpression
 eLit :: BParser ParseExpr
-eLit = Lit <$> literal <|> eList <|> eTup
+eLit = Lit <$> literal
 
 -- | Parse a variable function
 eVar :: BParser ParseExpr
@@ -59,49 +86,29 @@ eVar = Var <$> try aName
 -- | Parse a lambda abstraction lambdas with explicitly typed arguments are contained within annotations.
 -- TODO defer quantifying types?
 eAbs :: BParser ParseExpr
-eAbs = Lambda <$> csl arg <*> (typeAnnotation <* arrow_) <*> exblock
-    where arg = (,) <$> lName <*> typeAnnotation
+eAbs = Lambda <$> try (csl arg) <*> (try (optional typeAnnotation) <* arrow_) <*> exblock
+    where arg = (,) <$> lName <*> optional typeAnnotation
 
--- | Parse an application expression
-eAp :: BParser ParseExpr
-eAp = fieldAp <|> functionAp
+-- | Field function application obj.field is syntactic sugar for _field(obj)
+fieldAccess :: ParseExpr -> BParser ParseExpr
+fieldAccess objectExpr = Field objectExpr <$> (dot_ *> lName)
 
--- | Field function application obj.method is syntactic sugar for method(obj)
-fieldAp :: BParser ParseExpr
-fieldAp = try $ do
-    object <- expr -- TODO longest matching parse.
-    myField <- dot_ *> lName
-    return $ Field object myField
-
--- | Function application, classic method(obj)
-functionAp :: BParser ParseExpr
-functionAp = try $ do
-    function <- expr -- TODO longest matching parse.
-    myArgs <- csl expr
-    return $ Call function myArgs
+-- | Function application, ex. method(arg1, arg2)
+functionCall :: ParseExpr -> BParser ParseExpr
+functionCall functionExpr = Call functionExpr <$> csl expr
 
 -- | Parse a let binding.
 eLet :: BParser ParseExpr
 eLet = Binding <$> lName <*> (equals_ *>) expr
 
 
--- | Parses a recursive let binding (also known as a function).
-{-eLetRec :: BParser ParseExpr-}
-{-eLetRec = try $ do -}
-      {-qual <- try constraint-}
-      {-name <- fun_ *> lName-}
-      {-lambda <- eAbs-}
-      {-return $ case lambda of-}
-          {-Annot (ex :-: (qs:=>t)) -> Annot $ -}
-                {-LetRec name ex eUnit :-: ((qual ++ qs):=>t)-}
-          {-ex -> LetRec name ex eUnit-}
-          --TODO fail on unbound qual
-
--- | Annotate an expression if given a qualified type. 
--- TODO somewhere else
-maybeAnnotate :: ParseExpr -> Maybe Type -> ParseExpr
-maybeAnnotate ex (Just t) = Annotation t ex
-maybeAnnotate ex _             = ex
+-- | Parses a function definition
+eFunc :: BParser ParseExpr
+eFunc = do 
+      cons <- optional constraint
+      fname <- fun_ *> lName
+      Lambda as rt bdy <- eAbs
+      return $ Func $ Function cons fname as rt bdy
 
 -- | Parse a case expression
 eCase :: BParser ParseExpr
@@ -110,8 +117,8 @@ eCase = Case <$> header <*> inlineBlock branch
           branch = Branch <$> (pat <* arrow_) <*> exblock
    
 -- | Parse a potentially annotated expression
-annotationAllowed :: BParser ParseExpr -> BParser ParseExpr
-annotationAllowed parser = maybeAnnotate <$> parser <*> typeAnnotation
+annotation :: ParseExpr -> BParser ParseExpr
+annotation annotatedExpr = Annotation annotatedExpr <$> (typeAnnotation <* notFollowedBy (char '(' <|> char '.'))
 
 -- | A list of blossom builtin operators.
 operators :: [[Operator (StateT (Int, Int) (Parsec String)) ParseExpr]]
@@ -131,13 +138,10 @@ operators = [
 
 -- | Parse a block of expressions chained with the sequence operator.
 exblock ::  BParser [ParseExpr]
-exblock = inlineBlock expr
+exblock = inlineBlock statement
 
 opAp :: String -> [ParseExpr] -> ParseExpr
 opAp s = Call (Var s)
-
-eUnit :: ParseExpr
-eUnit = Lit LNull
 
 eList :: BParser ParseExpr
 eList = EList <$> bracketList expr
