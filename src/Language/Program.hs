@@ -12,9 +12,7 @@ module Language.Program
     , defClasses
     ) where
 
-import Language.Expressions as X
-import Language.Bindings as X
-import qualified Data.Map.Strict as M
+import Parser.IR.Expressions
 
 imInst :: Implementation -> Inst
 imInst (Im i _) = i
@@ -24,27 +22,6 @@ data Implementation = Im Inst [Binding]
 
 data Class = Class [Id] [Implementation] [Id]
     deriving Show
-
-data Program = Program
-    { pBind :: [Binding]
-    , pImpl :: [Implementation]
-    , pAdt :: [Adt]
-    , pRdt :: [Rec]
-    , pBvr :: [(Id,Class)]
-    }
-
-data Adt = Adt 
-    { aType :: Qual Type 
-    , acnstrs :: [Annotated Id]
-    } deriving Show
-
-data Rec = Rec 
-    { rType :: Qual Type
-    , sups :: [Inst]
-    , rfields :: [(Type, Id)]
-    } deriving (Show)
-
-type ClassEnv = M.Map Id Class
 
 defClasses :: ClassEnv
 defClasses = M.fromList $ map mkCls 

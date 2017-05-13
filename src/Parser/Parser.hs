@@ -17,27 +17,26 @@ module Parser.Parser (parseBlossomFile, blossomParser) where
 
 import Parser.Core
 import Parser.Exprs
-import Language.Utils
-import Language.Expressions
-import Language.Program
-import Language.Bindings
+import Parser.IR.Module
+import Parser.IR.Expressions
+import Parser.IR.Types
 import Parser.Types
 import Control.Monad.State (evalStateT)
 
-type TopParser = Program -> BParser Program
+type TopParser = Module -> BParser Module
 
-parseBlossomFile :: FilePath -> IO (Either ParseError Program)
+parseBlossomFile :: FilePath -> IO (Either ParseError Module)
 parseBlossomFile = parseFromFile blossomParser
 
 
-blossomParser :: Parsec String Program
+blossomParser :: Parsec String Module
 blossomParser = evalStateT blossom (0,1)
 
 top :: TopParser
 top prg = nonIndented $ choice $ map ($ prg) [gVar, fBind, behavior, implem, adt, rdt]
 
-blossom :: BParser Program
-blossom = re $ Program [] [] [] [] []
+blossom :: BParser Module
+blossom = re $ Module [] [] [] [] []
     where go prg = top prg >>= re
           re prg = do done <- optional eof
                       case done of
@@ -45,81 +44,68 @@ blossom = re $ Program [] [] [] [] []
                           _ -> go prg
  
 gVar :: TopParser
-gVar prg = addBinding prg <$> (eLet >>= (\(Let i e _) -> return $ ImpB $ Impl i e))
+gVar prg = addBinding prg <$> eLet
 
 fBind :: TopParser
-fBind prg = addBinding prg <$> (eLet >>= (\(LetRec i e _) -> return $ ImpB $ Impl i e))
+fBind prg = addBinding prg <$> eFunc
 
 adt :: TopParser
 adt prg = try $ do
-    q <- constraint 
-    tcon <- data_ *> ptype <* where_
-    let qt = q :=> tcon
-    stubs <- block (adtStub q tcon)
-    return $ addAdt prg $ Adt qt stubs
+    prd <- constraint 
+    tname <- data_ *> ptype <* where_
+    constructors <- block adtStub
+    return $ addAdt prg $ Adt prd tname constructors
 
-adtStub :: [Pred] -> Type -> BParser (Annotated Id)
-adtStub quals t = do
-    constructorName <- uName
-    argTypes <- opList (csl ptype)
-    let constructorType = mkFun argTypes t
-        qualedType = quals :=> constructorType
-    return $ constructorName :-: qualedType
+adtStub :: BParser (String, [Type])
+adtStub = (,) <$> uName <*> opList (csl ptype)
 
 rdt :: TopParser
 rdt prg = try $ do 
-    q <- constraint 
-    t <- data_ *> ptype
-    let qt = q :=> t
+    prd <- constraint 
+    tname <- data_ *> ptype
     -- TODO generate instances
-    supNs <- opList (inherits_ *> sepBy1 ptype comma_) <* where_
-    let supers = map (\(TCons n _) -> q :=> IsIn n [t]) supNs
-    fs <- block field
-    return $ addRecord prg $ Rec qt supers fs
+    supers <- opList (inherits_ *> sepBy1 ptype comma_)
+    where_
+    fields <- block field
+    return $ addRecord prg $ Rec prd tname supers fields
 
-field :: BParser (Type, Id)
-field = do 
-    fieldName <- dot_  *> lName
-    fieldType <- colon_ *> ptype
-    return $ (fieldType, fieldName)
+field :: BParser (String, Type)
+field = (,) <$> (dot_ *> lName) <*> (colon_ *> ptype) 
 
 behavior :: TopParser
 behavior prg = try $ do
-      qs <- constraint
-      let supers = map (\(IsIn n _) -> n) qs
-      name <- is_ *> uName <* when_
-      stubs <- block stub
-      return $ addBehavior prg (name, Class supers [] (map fst stubs))
+      prd <- constraint
+      vars <- csl ptype
+      nme <- is_ *> uName <* when_
+      defs <- block stub
+      return $ addBehavior prg $ Bhvr prd vars nme defs
 
-stub :: BParser (Id, Type)
+stub :: BParser (String, [Type], Type)
 stub = do 
-    name <- lName 
-    ts <- optional $ csl ptype
+    nme <- lName 
+    ts <- opList $ csl ptype
     rt <- colon_ *> ptype
-    return (name, case ts of
-                  Just ts' -> ts' `mkFun` rt
-                  Nothing -> rt)
+    return (nme, ts, rt)
 
 implem :: TopParser
 implem prg = try $ do
-      q <- constraint
-      t <- ptype
+      prd <- constraint
+      ts <- csl ptype
       bhvr <- is_ *> uName <* because_
-      let ins = q :=> IsIn bhvr [t]
-      impls <- block eLetRec
-      return $ addImplementation prg (Im ins impls)
+      impls <- block eFunc
+      return $ addImplementation prg (Implementation prd ts bhvr impls)
 
-addBinding :: Program -> Binding -> Program
-addBinding p b = p {pBind = b : pBind p}
+addBinding :: Module -> ParseExpr -> Module
+addBinding m b = m {mBind = b : mBind m}
 
-addRecord :: Program -> Rec -> Program
-addRecord p r = p {pRdt   = r : pRdt p}
+addRecord :: Module -> Rec -> Module
+addRecord m r = m {mRdt   = r : mRdt m}
 
-addAdt :: Program -> Adt -> Program
-addAdt p a = p {pAdt   = a : pAdt p}
+addAdt :: Module -> Adt -> Module
+addAdt m a = m {mAdt   = a : mAdt m}
 
-addBehavior :: Program -> (Id, Class) -> Program
-addBehavior p b = p {pBvr   = b : pBvr p}
+addBehavior :: Module -> Bhvr -> Module
+addBehavior m b = m {mBvr   = b : mBvr m}
 
-addImplementation :: Program -> Implementation -> Program
-addImplementation p i = p {pImpl  = i : pImpl p} 
+addImplementation :: Module -> Implementation -> Module
+addImplementation m i = m {mImpl  = i : mImpl m} 

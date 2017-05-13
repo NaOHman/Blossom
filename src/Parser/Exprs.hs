@@ -39,7 +39,7 @@ expr :: BParser ParseExpr
 expr = makeExprParser term operators <?> "expression"
 
 statement :: BParser ParseExpr
-statement = eFunc <|> expr
+statement = eFunc <|> eLet <|> expr
 
 -- | Parses a term. Basically any expression that isn't an operator application
 term :: BParser ParseExpr
@@ -64,7 +64,7 @@ blockExpressions = [eAbs, eCase]
 
 -- | Expressions that do not conatain sub expressions.
 terminalExpressions :: [BParser ParseExpr]
-terminalExpressions = [eLit, eLet, eVar, eList, eTup]
+terminalExpressions = [eLit, eVar, eList, eTup]
 
 -- | Expressions that require sub expressions. Each of these parsers takes a
 -- left hand expression and returns a parser which can parse the full
@@ -99,8 +99,10 @@ functionCall functionExpr = Call functionExpr <$> csl expr
 
 -- | Parse a let binding.
 eLet :: BParser ParseExpr
-eLet = Binding <$> lName <*> (equals_ *>) expr
-
+eLet = do
+    nme <- try lName <* equals_
+    ex <- expr
+    return $ Binding nme ex
 
 -- | Parses a function definition
 eFunc :: BParser ParseExpr
