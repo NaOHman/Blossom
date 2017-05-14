@@ -21,8 +21,10 @@ data Function a = Function
     , returnType :: Maybe a
     , body       :: [Expr a]
     }
+    deriving Eq
 
 data Branch a = Branch Pat [Expr a]
+    deriving Eq
 
 data Expr a = Lit Literal
             | Var String
@@ -35,6 +37,7 @@ data Expr a = Lit Literal
             | Annotation (Expr a) a
             | EList [Expr a]
             | ETuple [Expr a]
+    deriving Eq
 
 instance Pretty a => Show (Branch a) where
     show = pretty

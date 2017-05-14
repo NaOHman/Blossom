@@ -20,4 +20,5 @@ instance Pretty Literal where
     pp _ (LInt i) = show i
     pp _ (LFloat f) = show f
     pp _ (LBool b) = show b
+    pp _ (LString b) = '"' : b ++ "\"" --TODO(naohman) add escaping
     pp _ LNull = "()"

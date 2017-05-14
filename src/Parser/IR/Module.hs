@@ -18,6 +18,7 @@ data Implementation = Implementation
     , imBhvr :: String
     , imDefs :: [ParseExpr]
     }
+    deriving Eq
 
 data Bhvr = Bhvr 
     { bhvrPred :: [Pred]
@@ -25,6 +26,7 @@ data Bhvr = Bhvr
     , bhvrName :: String
     , bhvrDefs :: [(String, [Type], Type)]
     }
+    deriving Eq
 
 data Module = Module
     { mBind :: [ParseExpr]
@@ -33,12 +35,14 @@ data Module = Module
     , mRdt :: [Rec]
     , mBvr :: [Bhvr]
     }
+    deriving Eq
 
 data Adt = Adt 
     { adtPred :: [Pred]
     , adtType :: Type
     , adtConstructors :: [(String, [Type])]
     }
+    deriving Eq
 
 data Rec = Rec 
     { recPred :: [Pred]
@@ -46,6 +50,7 @@ data Rec = Rec
     , recSupers :: [Type]
     , recFields :: [(String, Type)]
     }
+    deriving Eq
 
 instance Show Implementation where
     show = pretty

@@ -2,7 +2,7 @@ module Test.Parser.TypeUnitTest where
 
 import Test.HUnit
 import Parser.Types
-import Language.Expressions
+import Parser.IR.Types
 import Test.Parser.ParserUtil
 import Parser.Identifiers
 
@@ -11,32 +11,29 @@ testType = TestLabel "Literal Tests" $
     TestList [testConstraint, testTypeAnnotation, testPType]
  
 tvarA :: Type
-tvarA = TVar "a" Star
+tvarA = TMono "a"
 
 tvarB :: Type
-tvarB = TVar "b" Star
+tvarB = TMono "b"
 
 thingOfA :: Type
-thingOfA = TAp (TCons "Thing" (KFun Star Star)) tvarA
+thingOfA = TPoly "Thing" [tvarA]
 
 listOfA :: Type
-listOfA = TAp (TCons "List" (KFun Star Star)) tvarA
-
-func :: Type -> Type -> Type
-func t1 t2 = TAp (TAp (TCons "->" (KFun Star (KFun Star Star))) t1) t2
+listOfA = TList tvarA
 
 funcFromAToB :: Type
-funcFromAToB = func tvarA tvarB
+funcFromAToB = TFunc [tvarA] tvarB
 
 funcABThingA :: Type
-funcABThingA = func tvarA (func tvarB thingOfA)
+funcABThingA = TFunc [tvarA, tvarB] thingOfA
 
 testPType :: Test
 testPType = TestLabel "Test ptype" $ TestList
     [ testParse "simple variable type"
         tvarA ptype "a"
     , testParse "simple Type Constructor"
-        (TCons "SomeType" Star) ptype "SomeType"
+        (TMono "SomeType") ptype "SomeType"
     , testParse "Applied Type Constructor"
         thingOfA ptype "Thing<a>"
     , testParse "List sugar"
@@ -49,22 +46,20 @@ testPType = TestLabel "Test ptype" $ TestList
 
 testTypeAnnotation :: Test
 testTypeAnnotation = TestLabel "Type Annotations" $ TestList
-    [ testParse "no annotation"
-        Nothing (dot_ *> typeAnnotation) "."
-    , testParse "Simple annotation"
-        (Just $ [] :=> TCons "Int" Star) 
+    [ testParse "Simple annotation"
+        (TMono "Int")
         (dot_ *> typeAnnotation) ". : Int"
     , testParse "TAp annotation"
-        (Just $ [] :=> thingOfA)
+        (TPoly "Thing" [tvarA])
         (dot_ *> typeAnnotation) ". : Thing<a>"
     , testParse "Constrained annotation"
-        (Just $ [IsIn "Eq" [tvarA]] :=> tvarA) 
+        (Given [IsIn "Eq" [tvarA]] tvarA) 
         (dot_ *> typeAnnotation) ". : Given Eq(a). a"
     , testParse "Constrained constructor annotation"
-        (Just $ [IsIn "Eq" [tvarA]] :=> thingOfA) 
+        (Given [IsIn "Eq" [tvarA]] thingOfA) 
         (dot_ *> typeAnnotation) ". : Given Eq(a). Thing<a>"
     , testParse "Multi-constrained annotation"
-        (Just $ [IsIn "Eq" [tvarA], IsIn "Show" [tvarA]] :=> tvarA)
+        (Given [IsIn "Eq" [tvarA], IsIn "Show" [tvarA]] tvarA)
         (dot_ *> typeAnnotation) ". : Given Eq(a), Show(a). a"
     , testParseFail "Constraint must have a type"
         (dot_ *> typeAnnotation) ". : Given Class(a)."

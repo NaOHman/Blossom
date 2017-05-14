@@ -2,7 +2,7 @@ module Test.Parser.LiteralUnitTest where
 
 import Test.HUnit
 import Parser.Literals
-import Language.Expressions
+import Parser.IR.Literals
 import Test.Parser.ParserUtil
 
 testLiteral :: Test

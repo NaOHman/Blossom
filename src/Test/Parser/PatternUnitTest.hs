@@ -70,38 +70,21 @@ testPLit = TestLabel "Literal Test" $ TestList
 testString :: Test
 testString = TestLabel "String test" $ TestList
     [ testParse "Should parse empty string pattern"
-        (PCons "[nil]" []) pat "\"\""
-    , testParse "Should parse empty string pattern"
-        (PCons "[cons]" 
-            [PLit (LChar 'h'), 
-            PCons "[nil]" []]) 
-        pat "\"h\""
+        (PLit (LString "")) pat "\"\""
     , testParse "Should parse singleton string pattern"
-        (PCons "[cons]" 
-            [PLit (LChar '\''), 
-            PCons "[nil]" []]) 
-        pat "\"'\""
+        (PLit (LString "h")) pat "\"h\""
+    , testParse "Should parse singleton string pattern"
+        (PLit (LString "\'")) pat "\"'\""
     , testParse "Should parse a string pattern"
-        (PCons "[cons]" 
-            [PLit (LChar '\n'), 
-            PCons "[cons]" 
-                [PLit (LChar '\t'), 
-                PCons "[nil]" []]]) 
-        pat "\"\\n\\t\""
+        (PLit (LString "\n\t")) pat "\"\\n\\t\""
     ]
 
 testTuple :: Test
 testTuple = TestLabel "Tuple test" $ TestList
     [ testParse "Should parse a 2 tuple"
-        (PCons "(,)" 
-            [PNil, 
-            PCons "Cons" []]) 
-        pat "(_, Cons)"
+        (PTuple [PNil, PCons "Cons" []]) pat "(_, Cons)"
     , testParse "Should parse a 3 tuple"
-        (PCons "(,,)" 
-            [PLit (LChar 'h'), 
-            PVar "var", 
-            PNil])
+        (PTuple [PLit (LChar 'h'), PVar "var", PNil])
          pat "('h',   var, _)"
     , testParseFail "Empty parens are an error"
         pat "( )"
@@ -112,30 +95,15 @@ testTuple = TestLabel "Tuple test" $ TestList
 testArray :: Test
 testArray = TestLabel "Array test" $ TestList
     [ testParse "Should parse an empty list"
-        (PCons "[nil]" []) pat "[]"
+        PEmptyList pat "[]"
     , testParse "Should parse a singleton list"
-        (PCons "[cons]" 
-            [PNil, 
-            PCons "[nil]" []]) 
-        pat "[_]"
+        (PSingleton PNil) pat "[_]"
     , testParse "Should parse multiple element list"
-        (PCons "[cons]" 
-            [PNil, 
-            PCons "[cons]" 
-                [PVar "var", 
-                PCons "[nil]" []]]) 
-        pat "[_, var]"
+        (PArray [PNil, PVar "var"]) pat "[_, var]"
     , testParse "Should parse the tail of a list"
-        (PCons "[cons]" 
-            [PNil, 
-            PVar "var"]) 
-        pat "[_ | var]"
+        (PListComp [PNil] (PVar "var")) pat "[_ | var]"
     , testParse "Should parse the second tail of a list"
-        (PCons "[cons]" 
-            [PNil, 
-            PCons "[cons]" 
-                [PVar "var", 
-                PVar "tail"]]) 
+        (PListComp [PNil, PVar "var"] (PVar "tail"))
         pat "[_, var | tail]"
     , testParseFail "Commas are forbidden after | in array patterns"
         pat "[_ | var , tail]"
