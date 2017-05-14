@@ -2,7 +2,8 @@ module Test.Parser.PatternUnitTest where
 
 import Test.HUnit
 import Test.Parser.ParserUtil
-import Language.Expressions
+import Parser.IR.Patterns
+import Parser.IR.Literals
 import Parser.Patterns
 
 testPattern :: Test
