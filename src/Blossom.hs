@@ -3,9 +3,12 @@ import Parser.Parser
 {-import PreProcessor.Bindings-}
 {-import Language.Inference-}
 {-import Interpretor.Evaluator-}
-import Language.Program
-import Language.Expressions
+{-import Language.Program-}
+{-import Language.Expressions-}
 {-import qualified Data.Map as M-}
+import Parser.Parser
+import Parser.IR.Module
+import Parser.IR.Pretty
 import System.Environment
 import System.Exit
 import Data.List (isPrefixOf)
@@ -48,18 +51,18 @@ runBlossom file args dbg = do
             {-let myBinds = bs ++ apply s (flatten bg)-}
             {-interpretBlossom myBinds args (dbgInterpret dbg)-}
 
-debugParser :: Program -> IO()
-debugParser (Program bs is as rs bhs) = do 
+debugParser :: Module -> IO()
+debugParser (Module bs is as rs bhs) = do 
     putStrLn "_______PREPROC OUTPUT_____"
     putStrLn "BEHAVIORS:"
-    mapM_ print bhs
+    mapM_ (print . pretty) bhs
     putStrLn "IMPLEMENTATIONS:"
-    mapM_ print is
+    mapM_ (print . pretty) is
     putStrLn "DATA TYPES:"
-    mapM_ print rs
-    mapM_ print as
+    mapM_ (print . pretty) rs
+    mapM_ (print . pretty)  as
     putStrLn "BINDINGS:"
-    {-mapM_ (putStrLn . prettyPrint) bs-}
+    mapM_ (print . pretty) bs
 
 {-debugPreProc :: ClassEnv -> [Assump] -> [BindGroup] -> [Bind] -> IO()-}
 {-debugPreProc ce as bg bs = do-}
@@ -73,10 +76,10 @@ debugParser (Program bs is as rs bhs) = do
     {-putStrLn "BINDINGS:"-}
     {-mapM_ print bs-}
 
-debugTypeCheck :: [Assump] -> IO()
-debugTypeCheck as = do
-    putStrLn "_______TYPECHECKER OUTPUT_____"
-    mapM_ print as
+{-debugTypeCheck :: [Assump] -> IO()-}
+{-debugTypeCheck as = do-}
+    {-putStrLn "_______TYPECHECKER OUTPUT_____"-}
+    {-mapM_ print as-}
 
 parseArgs :: Monad m => [String] -> m (Dbg, String, [String])
 parseArgs [f] = return (def, f, [])
